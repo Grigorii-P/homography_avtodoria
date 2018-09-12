@@ -1,28 +1,19 @@
 import cv2
 import numpy as np
 import math
-from sympy import Symbol, nsolve
-import sympy
-import mpmath
 
 
 path_to_src = 'photos/1.JPG'
-path_to_new_src = 'photos/1.JPG'
-
-dst_size = (round(4000 / 3.057), 4000)
+dst_size_height = 2000
 
 
-def get_coords(x1, y1, x2, y2, a, c):
-    x = Symbol('x')
-    y = Symbol('y')
-
-    f1 = (y-y1)**2+(x-x1)**2 - c**2 
-    f2 = (y-y2)**2+(x-x2)**2 - a**2
-
-    return list(nsolve((f1, f2), (x, y), (10, 20)))
+def print_(s):
+    print('-'*50)
+    print(s)
+    print('-'*50)
 
 
-def get_points():
+def get_points(file_pts):
     with open(file_pts) as f:
         content = f.readlines()
     content = [x.replace('\n', '') for x in content]
@@ -40,23 +31,62 @@ def get_points():
     return pts_src, pts_dst
 
 
-im_src = cv2.imread(path_to_src)
-im_new_src = cv2.imread(path_to_new_src)
+#TODO find analitycal solution for absolute coordinates
 
-# order: A-B-C-D
-pts_src =  np.array([[2597, 1862], [2327, 1086], [1682, 1061], [1179, 1796]])
-# pts_dst =  np.array([[1497, 0], [1500, 1959], [0, 2000], [0, 37]])
-pts_dst =  np.array([[4024, 0], [4032, 2962], [0, 3024], [0, 56]])
+im_src = cv2.imread(path_to_src)
+
+# edge coordinates in meters
+a = [9.98, 30.57]
+b = [9.99, 0.64]
+c = [0, 0]
+d = [0, 30]
+pts_real = [a, b, c, d]
+
+x_min, x_max = 1000, 0
+y_min, y_max = 1000, 0
+for item in pts_real:
+    if item[0] < x_min:
+        x_min = item[0]
+    if item[0] > x_max:
+        x_max = item[0]
+    if item[1] < y_min:
+        y_min = item[1]
+    if item[1] > y_max:
+        y_max = item[1]
+
+resolution_scale = (x_max - x_min) / (y_max - y_min)
+dst_size_width = round(dst_size_height * resolution_scale)
+scale_x = dst_size_width / (x_max - x_min)
+scale_y = dst_size_height / (y_max - y_min)
+
+# calculate dst coordinates automatically
+pts_dst = []
+for i, item in enumerate(pts_real):
+    pts_dst.append([item[0] * scale_x, item[1] * scale_y])
+pts_dst = np.array(pts_dst)
+
+# edge points on the photo
+A = [2597, 1862]
+B = [2327, 1086]
+C = [1682, 1061]
+D = [1179, 1796]
+pts_src =  np.array([A, B, C, D])
 
 h, status = cv2.findHomography(pts_src, pts_dst)
-im_out = cv2.warpPerspective(im_new_src, h, (im_src.shape[1], im_src.shape[0]))
-# im_out = cv2.warpPerspective(im_new_src, h, (im_src.shape[0], im_src.shape[1]))
-im_out = cv2.resize(im_out, (dst_size[0], dst_size[1]))
-# im_out = cv2.resize(im_out, (dst_size[1], dst_size[0]))
+
+# new_point = np.dot(h,np.array([[2424],[1825],[1]]))
+# new_point = new_point/new_point[-1]
+# print_("position of the blob on the ground xy plane: {}".format(new_point))
+
+im_out = cv2.warpPerspective(im_src, h, (dst_size_width, dst_size_height))
+
+# x1, y1 = 200, 200
+# x2, y2 = 300, 300
+# cv2.rectangle(im_src, (x1, y1), (x2, y2), (255,0,0), 10)
+
+# im_out = cv2.resize(im_out, (dst_size_width, dst_size_height))
 
 # corners = np.float32([ [0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0] ]).reshape(-1, 1, 2)
 # transformedCorners = cv2.perspectiveTransform(corners, M)
 
-# cv2.imshow("Warped Source Image", im_out)
 cv2.imwrite('res.jpg', im_out)
-# cv2.waitKey(0)
