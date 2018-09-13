@@ -1,6 +1,11 @@
-a = [1,2,3,4]
+from test import *
 
-for item in a:
-    item = item + 1
+bc = 10.02
+ad = 10
+cd = 30
+ac = 32.16
+bd = 31.02
 
-print(a)
+h = H(bc, ad, cd, ac, bd)
+h.find_homography()
+h.get_point_transorm()
