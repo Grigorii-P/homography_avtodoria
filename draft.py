@@ -1,18 +1,11 @@
-# from homography import *
+from homography import *
 import numpy as np
+import cv2 as cv
 
-# bc = 10.02
-# ad = 10
-# cd = 30
-# ac = 32.16
-# bd = 31.02
-
-# h = H(bc, ad, cd, ac, bd)
-# h.find_homography()
-# h.get_point_transorm()
-
-a = np.array([1,2,3])
-a = ()
-
-if type(a) is np.ndarray:
-    print('fuck yeah')
+a = {}
+b = {1:2}
+c = {1:2}
+a[0] = {}
+a[1] = b
+a[2] = c
+print()

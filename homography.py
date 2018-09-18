@@ -1,20 +1,12 @@
 import cv2
 import numpy as np
-import math
+from math import sqrt
 from sympy import solve_poly_system
 from sympy.abc import x,y
 
 
 # COORDINATES: A(1,1), B(1.0), C(0,0), D(0,1)
-path_to_src = 'photos/1.JPG'
 dst_size_height = 2000
-
-# edge points on the photo
-A = [2597, 1862]
-B = [2327, 1086]
-C = [1682, 1061]
-D = [1179, 1796]
-pts_src =  np.array([A, B, C, D])
 
 
 def print_(s):
@@ -22,12 +14,14 @@ def print_(s):
     print(s)
     print('-'*50)
 
-
+# solve non-linear equations
 def find_coords(cd, a_b, b_a):
     x1, y1 = 0, 0
     x2, y2 = 0, cd
     equations = [(y-y1)**2 + (x-x1)**2 - b_a**2, (y-y2)**2 + (x-x2)**2 - a_b**2]
     solutions = solve_poly_system(equations, x, y)
+    #TODO точка C может лежать чуть ниже точки B, 
+    # тогда solutions везде будут отрицательными - решить момент
     for item in solutions:
         if item[0] >= 0 and item[1] >= 0:
             first = float(item[0])
@@ -37,14 +31,17 @@ def find_coords(cd, a_b, b_a):
 
 
 class H:
-    def __init__(self, bc_, ad_, cd_, ac_, bd_):
+    def __init__(self, bc_, ad_, cd_, ac_, bd_, pts_src):
         # lenghts between points in meters
         self.bc = bc_
         self.ad = ad_
         self.cd = cd_
         self.ac = ac_
         self.bd = bd_
+        self.pts_src = pts_src
 
+    #TODO insert the function in the constructor 
+    # so that you dont need to call this method separately
     def find_homography(self):
         # find a and b coordinates
         a = find_coords(self.cd, self.ad, self.ac)
@@ -71,6 +68,7 @@ class H:
         self.dst_size_width = round(dst_size_height * resolution_scale)
         scale_x = self.dst_size_width / (x_max - x_min) # coefs for pixels-to-meters transformation
         scale_y = dst_size_height / (y_max - y_min)
+        self.scale = (scale_x + scale_y) / 2
 
         # calculate dst_img coordinates automatically
         pts_dst = []
@@ -82,15 +80,21 @@ class H:
         # print_(type(pts_dst[0]))
         # print_(type(pts_dst[0][0]))
 
-        self.h, status = cv2.findHomography(pts_src, pts_dst)
+        self.h, status = cv2.findHomography(self.pts_src, pts_dst)
 
-    def get_point_transorm(self):
-        im_src = cv2.imread(path_to_src)
+    def get_point_transform(self, src, dst):
+        # im_src = cv2.imread(path_to_src)
+        # im_out = cv2.warpPerspective(im_src, self.h, (self.dst_size_width, dst_size_height))
+        # cv2.imwrite('test_result.jpg', im_out)
+
 
         # project a point from original image to the projection
-        new_point = np.dot(self.h,np.array([[1680],[1561],[1]]))
-        new_point = new_point/new_point[-1]
-        print_('{}'.format(new_point[:2]))
-
-        im_out = cv2.warpPerspective(im_src, self.h, (self.dst_size_width, dst_size_height))
-        cv2.imwrite('res.jpg', im_out)
+        src_proj = np.dot(self.h,np.array([[src[0]],[src[1]],[1]]))
+        dst_proj = np.dot(self.h,np.array([[dst[0]],[dst[1]],[1]]))
+        #TODO проверка на отрицательные координаты,
+        #когда поймали машину вне рамки нашего обзора - продумать момент
+        src_proj = src_proj / src_proj[-1]
+        dst_proj = dst_proj / dst_proj[-1]
+        dist = sqrt((src_proj[0] - dst_proj[0])**2 + (src_proj[1] - dst_proj[1])**2)
+        dist_meters = dist / self.scale
+        return dist_meters

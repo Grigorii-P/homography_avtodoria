@@ -1,28 +1,24 @@
 #Первичное обнаружение ГРЗ в видеопотоке и распознавание её содержимого
 import numpy as np
 import cv2 as cv
-import sys, caffe
+import sys
+import caffe
 import time
 from os.path import join
+from homography import *
 
 
-PATH_TO_MODEL = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
-PATH_TO_WEIGHTS = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
-PATH_TO_CASCADE = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
-PATH_TO_VIDEO = '/home/grigorii/Desktop/primary_search/video-1.mp4'
-PATH_TO_SAVE_FRAMES = '/home/grigorii/Desktop/homography/test_frames'
-# PATH_TO_TRACKS = '/home/adel/Documents/Python/test/meta/1'
+path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
+path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
+path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
+path_to_video = '/home/grigorii/Desktop/primary_search/video-1.mp4'
+path_to_save_frames = '/home/grigorii/Desktop/homography/test_frames'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
 maxSize_ = (200,40)
-
-#TODO как вытащить время из кадров
-
-def print_(s):
-    print('-'*80)
-    print(s)
-    print('-'*80)
+time_per_frame = 0
+#TODO добавить шаг пересчета скоростей (напр, брать каждый второй фрейм или десятый и тд)
 
 
 def output_plateNumber(img):
@@ -49,32 +45,65 @@ def target_list(path_to_file):
         return content
 
 
+def get_curr_speed(plates_coords, frame, h):
+    global time_per_frame
+    curr_cars = plates_coords[frame].keys()
+    prev_cars = plates_coords[frame - 1].keys()
+    plates_in_both_frames = list(set(curr_cars).intersection(prev_cars))
+    if plates_in_both_frames:
+        for number in plates_in_both_frames:
+            src = plates_coords[frame - 1][number]
+            dst = plates_coords[frame][number]
+            dist_meters = h.get_point_transform(src, dst)
+            speed = dist_meters / time_per_frame_sec * 3.6 # km/h
+            print('{} - {} km/h'.format(number, speed))
+
+
 if __name__ == "__main__":
-    counter  = 0
-    start = time.clock()
+    frame_counter = 0
+    plates_mean_coords_in_frame = {} # coords of the plate center point
+    plates_coords = {}
+    current_speed = {}
 
-    # if len(sys.argv) > 1:
-    #     cap = cv.VideoCapture(sys.argv[1])
-    # else:
-    #     cap = cv.VideoCapture(0)
-    cap = cv.VideoCapture(PATH_TO_VIDEO)
+    # distances between points in meters
+    bc = 5
+    ad = 6
+    cd = 5.5
+    ac = 7.8
+    bd = 7.1
+    # coordinates of the corresponding points on the image
+    A = [1659, 680]
+    B = [1837, 249]
+    C = [652, 239]
+    D = [15, 605]
+    pts_src =  np.array([A, B, C, D])
+    hom = H(bc, ad, cd, ac, bd, pts_src)
+    hom.find_homography()
+
+    cap = cv.VideoCapture(path_to_video)
+    cap.set(cv.CAP_PROP_POS_AVI_RATIO, 1)
+    video_length_msec = cap.get(cv.CAP_PROP_POS_MSEC)
+    frames_num = cap.get(cv.CAP_PROP_POS_FRAMES)
+    time_per_frame_sec = video_length_msec / frames_num / 1000 # to get sec instead of msec
     
-    plate_cascade = cv.CascadeClassifier(PATH_TO_CASCADE)
+    plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
-    net = caffe.Net(PATH_TO_MODEL, PATH_TO_WEIGHTS, caffe.TEST)
-    # tracks = target_list(PATH_TO_TRACKS)
-    # frame_numbers = open(PATH_TO_INCORRECTLY_CLASSIFIED_IMGS+'frame_numbers','w')
-    # all_numbers = open(PATH_TO_INCORRECTLY_CLASSIFIED_IMGS+'all_numbers','w')
+    net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
 
+    # work on each incoming frame
+    #TODO костыль, без этой повторной строчки видео не откроется
+    cap = cv.VideoCapture(path_to_video)
+    plates_in_frame = {}
     while True:
         ret, img = cap.read()
         if ret is False:
-            print("Cannot read a stream")
-            break
+            raise ValueError('Cannot read a stream')
         
+        # get plates via VJ haar
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         plates = plate_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=3, minSize=minSize_, maxSize=maxSize_)
 
+        # second iter for VJ
         if type(plates) is np.ndarray:
             haar_imgs = []
             for (x,y,w,h) in plates:
@@ -84,26 +113,52 @@ if __name__ == "__main__":
                     x_new, y_new, w_new, h_new = x + item[0], y + item[1], item[2], item[3]
                     haar_imgs.append([x_new, y_new, w_new, h_new])
             plates = haar_imgs
-
-        for (x,y,w,h) in plates:
+        
+        if frame_counter == 139:
+            print()
+        for i, (x,y,w,h) in enumerate(plates):
             d = 0
             try:
-            	number = output_plateNumber(gray[y-d:y+h+d, x:x+w])
+                number = output_plateNumber(gray[y-d:y+h+d, x:x+w])
             except:
-            	number = output_plateNumber(gray[y:y+h, x:x+w])
-            try:
-            	cv.rectangle(gray,(x,y-d),(x+w,y+h+d),(0,255,0),1)
-            except:
-            	cv.rectangle(gray,(x,y),(x+w,y+h),(0,255,0),1)
-            cv.imwrite(join(PATH_TO_SAVE_FRAMES, str(counter) + '.png'), img)
-            counter += 1
-            print(counter)
+                number = output_plateNumber(gray[y:y+h, x:x+w])
 
-        # cv.imshow('img',img)
-        # if cv.waitKey(70) == 27:
-        #     print("quite")
-        #     break
+            # put each number with its plates into the `plates_in_frame`
+            # (there might be more than one plate for each number in one frame)
+            if number in plates_in_frame:
+                new_rect = plates_in_frame[number]
+                new_rect.append((x,y,w,h))
+                plates_in_frame[number] = new_rect
+            else:
+                plates_in_frame[number] = [(x,y,w,h)]
 
+        # calculate the mean plate for each number in one frame
+        for key in plates_in_frame.keys():
+            num = plates_in_frame[key]
+            x_av, y_av, w_av, h_av, count = 0, 0, 0, 0, 0 # av - average
+            for item in num:
+                x_av += item[0]
+                y_av += item[1]
+                w_av += item[2]
+                h_av += item[3]
+                count += 1           
+            plates_mean_coords_in_frame[key] = [round(x_av / count + (w_av / count) / 2), 
+                                                round(y_av / count + (h_av / count) / 2)]
+        
+        if frame_counter == 57:
+            ass=5
+        # new dict for calculating speed between any frames of the video
+        plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
 
-    cv.destroyAllWindows()
-    print(time.clock() - start)
+        if frame_counter > 0:
+            if bool(plates_coords):
+                print('-'*50)
+                print('frame {}\n'.format(frame_counter))
+                get_curr_speed(plates_coords, frame_counter, hom)
+                print('-'*50)
+
+        frame_counter += 1
+        plates_in_frame.clear()
+        plates_mean_coords_in_frame.clear()
+        
+    # cv.destroyAllWindows()
