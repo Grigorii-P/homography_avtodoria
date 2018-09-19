@@ -5,7 +5,8 @@ import sys
 import caffe
 import time
 from os.path import join
-from homography import *
+from homography import H, print_
+import json
 
 
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
@@ -17,8 +18,10 @@ path_to_save_frames = '/home/grigorii/Desktop/homography/test_frames'
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
 maxSize_ = (200,40)
-time_per_frame = 0
-#TODO добавить шаг пересчета скоростей (напр, брать каждый второй фрейм или десятый и тд)
+time_per_frame_sec = 0
+#TODO don't take into account plates that appear less than `num_duplicates` times
+num_duplicates = 2
+frames_threshold = 5 # finalize a plate if doesn't appear this times of frames
 
 
 def output_plateNumber(img):
@@ -46,7 +49,7 @@ def target_list(path_to_file):
 
 
 def get_curr_speed(plates_coords, frame, h):
-    global time_per_frame
+    global time_per_frame_sec
     curr_cars = plates_coords[frame].keys()
     prev_cars = plates_coords[frame - 1].keys()
     plates_in_both_frames = list(set(curr_cars).intersection(prev_cars))
@@ -59,11 +62,21 @@ def get_curr_speed(plates_coords, frame, h):
             print('{} - {} km/h'.format(number, speed))
 
 
+def get_average_speed(src, dst, frame_diff, h):
+    #TODO add average speed between all of the pairs of coordinates, 
+    # not only between first and the last ones
+    global time_per_frame_sec
+    dist_meters = h.get_point_transform(src, dst)
+    t = time_per_frame_sec * frame_diff
+    speed = dist_meters / t * 3.6 # km/h
+    return speed
+
+
 if __name__ == "__main__":
     frame_counter = 0
+    plates_ever_met = {} # {number : [frame_appearances]}
     plates_mean_coords_in_frame = {} # coords of the plate center point
-    plates_coords = {}
-    current_speed = {}
+    plates_coords = {} # new dict for calculating speed between any frames of the video
 
     # distances between points in meters
     bc = 5
@@ -91,12 +104,12 @@ if __name__ == "__main__":
     net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
 
     # work on each incoming frame
-    #TODO костыль, без этой повторной строчки видео не откроется
     cap = cv.VideoCapture(path_to_video)
     plates_in_frame = {}
     while True:
         ret, img = cap.read()
         if ret is False:
+            break
             raise ValueError('Cannot read a stream')
         
         # get plates via VJ haar
@@ -113,9 +126,7 @@ if __name__ == "__main__":
                     x_new, y_new, w_new, h_new = x + item[0], y + item[1], item[2], item[3]
                     haar_imgs.append([x_new, y_new, w_new, h_new])
             plates = haar_imgs
-        
-        if frame_counter == 139:
-            print()
+
         for i, (x,y,w,h) in enumerate(plates):
             d = 0
             try:
@@ -134,31 +145,66 @@ if __name__ == "__main__":
 
         # calculate the mean plate for each number in one frame
         for key in plates_in_frame.keys():
-            num = plates_in_frame[key]
+            if key in plates_ever_met:
+                frames = plates_ever_met[key]
+                frames.append(frame_counter)
+                plates_ever_met[key] = frames
+            else:
+                plates_ever_met[key] = [frame_counter]
+
+            coords = plates_in_frame[key]
+
             x_av, y_av, w_av, h_av, count = 0, 0, 0, 0, 0 # av - average
-            for item in num:
+            for item in coords:
                 x_av += item[0]
                 y_av += item[1]
                 w_av += item[2]
                 h_av += item[3]
-                count += 1           
+                count += 1
+
             plates_mean_coords_in_frame[key] = [round(x_av / count + (w_av / count) / 2), 
                                                 round(y_av / count + (h_av / count) / 2)]
         
-        if frame_counter == 57:
-            ass=5
-        # new dict for calculating speed between any frames of the video
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
 
-        if frame_counter > 0:
-            if bool(plates_coords):
-                print('-'*50)
-                print('frame {}\n'.format(frame_counter))
-                get_curr_speed(plates_coords, frame_counter, hom)
-                print('-'*50)
+        # print the speed at each frame
+        # if frame_counter > 0:
+        #     if bool(plates_coords):
+        #         print('-'*50)
+        #         print('frame {}\n'.format(frame_counter))
+        #         get_curr_speed(plates_coords, frame_counter, hom)
+        #         print('-'*50)
+
+        # calculate the average speed between first and the last frames of the number 
+        # that didn't appear after `frames_threshold` times (finalize it)
+        plates_to_del = []
+        for key in plates_ever_met:
+            last = plates_ever_met[key][-1]
+            if frame_counter - last >= frames_threshold:
+                first = plates_ever_met[key][0]
+                frame_diff = last - first
+                if frame_diff == 0: # there was only one capture of the number
+                    plates_to_del.append(key)
+                    continue
+                src = plates_coords[first][key]
+                dst = plates_coords[last][key]
+                speed = get_average_speed(src, dst, frame_diff, hom)
+                print_('{} - {}'.format(key, speed))
+                plates_to_del.append(key)
+        for item in plates_to_del:
+            del plates_ever_met[item]
 
         frame_counter += 1
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
+
+        # print_(frame_counter)
+        # if frame_counter == 3000:
+        #     break
+            # print()
+
+    # experiment = {k:v for k,v in experiment.items() if v != num_duplicates}
+    # with open('exp.json', 'w') as f:
+    #     json.dump(experiment, f)
         
     # cv.destroyAllWindows()

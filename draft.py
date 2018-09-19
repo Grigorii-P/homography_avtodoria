@@ -1,11 +1,13 @@
-from homography import *
 import numpy as np
-import cv2 as cv
+import matplotlib.mlab as mlab
+import matplotlib.pyplot as plt
+import json
 
-a = {}
-b = {1:2}
-c = {1:2}
-a[0] = {}
-a[1] = b
-a[2] = c
-print()
+with open('exp.json', 'r') as f:
+    experiment = json.load(f)
+
+x = [v for (k,v) in experiment.items()]
+
+num_bins = 25
+n, bins, patches = plt.hist(x, num_bins, facecolor='blue', alpha=0.5)
+plt.show()
