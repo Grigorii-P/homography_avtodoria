@@ -12,16 +12,16 @@ import json
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
-path_to_video = '/home/grigorii/Desktop/primary_search/video-1.mp4'
+# path_to_video = '/home/grigorii/Desktop/primary_search/video-1.mp4'
+path_to_video = '/home/grigorii/Desktop/homo_video'
 path_to_save_frames = '/home/grigorii/Desktop/homography/test_frames'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
 maxSize_ = (200,40)
 time_per_frame_sec = 0
-#TODO don't take into account plates that appear less than `num_duplicates` times
-num_duplicates = 2
-frames_threshold = 5 # finalize a plate if doesn't appear this times of frames
+min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
+frames_threshold = 25 # finalize a plate if doesn't appear this times of frames
 
 
 def output_plateNumber(img):
@@ -48,7 +48,7 @@ def target_list(path_to_file):
         return content
 
 
-def get_curr_speed(plates_coords, frame, h):
+def get_curr_speed(plates_coords, frame, hom):
     global time_per_frame_sec
     curr_cars = plates_coords[frame].keys()
     prev_cars = plates_coords[frame - 1].keys()
@@ -57,23 +57,40 @@ def get_curr_speed(plates_coords, frame, h):
         for number in plates_in_both_frames:
             src = plates_coords[frame - 1][number]
             dst = plates_coords[frame][number]
-            dist_meters = h.get_point_transform(src, dst)
+            dist_meters = hom.get_point_transform(src, dst)
             speed = dist_meters / time_per_frame_sec * 3.6 # km/h
             print('{} - {} km/h'.format(number, speed))
 
 
-def get_average_speed(src, dst, frame_diff, h):
-    #TODO add average speed between all of the pairs of coordinates, 
-    # not only between first and the last ones
+def get_weighted_speed(number, frames_list, plates_coords, hom):
     global time_per_frame_sec
-    dist_meters = h.get_point_transform(src, dst)
-    t = time_per_frame_sec * frame_diff
-    speed = dist_meters / t * 3.6 # km/h
-    return speed
+    
+    # time duration of the plate lifetime
+    t = (frames_list[-1] - frames_list[0]) * time_per_frame_sec
+    
+    # overall speed
+    src = plates_coords[frames_list[0]][number]
+    dst = plates_coords[frames_list[-1]][number]
+    dist_meters = hom.get_point_transform(src, dst)
+    speed_overall = dist_meters / t * 3.6 # km/h
+
+    # average speed
+    dist_meters = 0
+    coords = []
+    for frame in frames_list:
+        coords.append(plates_coords[frame][number])
+    for i in range(0, len(coords)-1):
+        dist_meters += hom.get_point_transform(coords[i], coords[i+1])
+    speed_av = dist_meters / t * 3.6 # km/h
+
+    return (speed_overall + speed_av) / 2
+        
+
 
 
 if __name__ == "__main__":
     frame_counter = 0
+    plates_in_frame = {}
     plates_ever_met = {} # {number : [frame_appearances]}
     plates_mean_coords_in_frame = {} # coords of the plate center point
     plates_coords = {} # new dict for calculating speed between any frames of the video
@@ -105,7 +122,6 @@ if __name__ == "__main__":
 
     # work on each incoming frame
     cap = cv.VideoCapture(path_to_video)
-    plates_in_frame = {}
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -153,7 +169,6 @@ if __name__ == "__main__":
                 plates_ever_met[key] = [frame_counter]
 
             coords = plates_in_frame[key]
-
             x_av, y_av, w_av, h_av, count = 0, 0, 0, 0, 0 # av - average
             for item in coords:
                 x_av += item[0]
@@ -181,14 +196,12 @@ if __name__ == "__main__":
         for key in plates_ever_met:
             last = plates_ever_met[key][-1]
             if frame_counter - last >= frames_threshold:
-                first = plates_ever_met[key][0]
-                frame_diff = last - first
-                if frame_diff == 0: # there was only one capture of the number
+                # if the plate appeared less than `min_num_appearances` times, 
+                # before the last 25 frames, don't take it into account
+                if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
-                src = plates_coords[first][key]
-                dst = plates_coords[last][key]
-                speed = get_average_speed(src, dst, frame_diff, hom)
+                speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
                 print_('{} - {}'.format(key, speed))
                 plates_to_del.append(key)
         for item in plates_to_del:
@@ -198,9 +211,9 @@ if __name__ == "__main__":
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
 
-        # print_(frame_counter)
-        # if frame_counter == 3000:
-        #     break
+        print_(frame_counter)
+        if frame_counter == 50:
+            break
             # print()
 
     # experiment = {k:v for k,v in experiment.items() if v != num_duplicates}
