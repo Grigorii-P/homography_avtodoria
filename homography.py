@@ -5,7 +5,9 @@ from sympy import solve_poly_system
 from sympy.abc import x,y
 
 
+# solve((y+0.0931)^2+(x-11.8186)^2 = 30.170^2, (y-30.4219)^2+(x-11.8186)^2 = 5.535^2, [x, y])
 # COORDINATES: A(1,1), B(1.0), C(0,0), D(0,1)
+path_to_test_img = 'test.jpg'
 dst_size_height = 2000
 
 
@@ -30,31 +32,16 @@ def find_coords(cd, a_b, b_a):
     raise ValueError('solution to equations is negative')
 
 
-class H:
-    def __init__(self, bc_, ad_, cd_, ac_, bd_, pts_src):
-        # lenghts between points in meters
-        self.bc = bc_
-        self.ad = ad_
-        self.cd = cd_
-        self.ac = ac_
-        self.bd = bd_
+class Homography:
+    def __init__(self, pts_src, pts_real):
         self.pts_src = pts_src
-
-    #TODO insert the function in the constructor 
-    # so that you dont need to call this method separately
-    def find_homography(self):
-        # find a and b coordinates
-        a = find_coords(self.cd, self.ad, self.ac)
-        b = find_coords(self.cd, self.bd, self.bc)
-        c = [0, 0]
-        d = [0, self.cd]
-        pts_real = [a, b, c, d]
+        self.pts_real = pts_real
 
         # find the border coordinates which constitute a countur
         # these points are corners in the resulting projection
         x_min, x_max = 1000, 0
         y_min, y_max = 1000, 0
-        for item in pts_real:
+        for item in self.pts_real:
             if item[0] < x_min:
                 x_min = item[0]
             if item[0] > x_max:
@@ -64,15 +51,16 @@ class H:
             if item[1] > y_max:
                 y_max = item[1]
 
+        # get pixel coordinates instead of real coordinates
         resolution_scale = (x_max - x_min) / (y_max - y_min)
-        self.dst_size_width = round(dst_size_height * resolution_scale)
-        scale_x = self.dst_size_width / (x_max - x_min) # coefs for pixels-to-meters transformation
+        dst_size_width = round(dst_size_height * resolution_scale)
+        scale_x = dst_size_width / (x_max - x_min) # coefs for pixels-to-meters transformation
         scale_y = dst_size_height / (y_max - y_min)
-        self.scale = (scale_x + scale_y) / 2
+        self.scale = (scale_x + scale_y) / 2 #TODO seems a silly step
 
         # calculate dst_img coordinates automatically
         pts_dst = []
-        for item in pts_real:
+        for item in self.pts_real:
             pts_dst.append([item[0] * scale_x, item[1] * scale_y])
         pts_dst = np.array(pts_dst)
 
@@ -80,13 +68,13 @@ class H:
         # print_(type(pts_dst[0]))
         # print_(type(pts_dst[0][0]))
 
-        self.h, status = cv2.findHomography(self.pts_src, pts_dst)
+        self.h, _ = cv2.findHomography(self.pts_src, pts_dst)
 
     def get_point_transform(self, src, dst):
-        # im_src = cv2.imread(path_to_src)
-        # im_out = cv2.warpPerspective(im_src, self.h, (self.dst_size_width, dst_size_height))
-        # cv2.imwrite('test_result.jpg', im_out)
-
+        # im_src = cv2.imread(path_to_test_img)
+        # im_out = cv2.warpPerspective(im_src, self.h, (int(self.dst_size_width), int(dst_size_height)))
+        # cv2.imwrite('test_result_8.jpg', im_out)
+        # print()
 
         # project a point from original image to the projection
         src_proj = np.dot(self.h,np.array([[src[0]],[src[1]],[1]]))

@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 import json
+import subprocess
+from homography import print_
 
 # with open('exp.json', 'r') as f:
 #     experiment = json.load(f)
@@ -12,13 +14,11 @@ import json
 # n, bins, patches = plt.hist(x, num_bins, facecolor='blue', alpha=0.5)
 # plt.show()
 
-dist_meters = 5
-t = 1
-speed_overall = dist_meters / t * 3.6 # km/h
 
-# average speed
-dist_meters = 0
-dist_meters = 6
-speed_av = dist_meters / t * 3.6 # km/h
+filename = '/home/grigorii/Desktop/momentum_speed/homo_video'
 
-print(speed_overall, speed_av)
+from moviepy.editor import VideoFileClip
+clip = VideoFileClip(filename)
+print(clip.size)
+print(clip.duration)
+print(clip.fps)

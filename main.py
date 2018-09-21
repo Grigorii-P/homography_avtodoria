@@ -5,23 +5,22 @@ import sys
 import caffe
 import time
 from os.path import join
-from homography import H, print_
+from homography import Homography, print_
 import json
+from moviepy.editor import VideoFileClip
 
 
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
-# path_to_video = '/home/grigorii/Desktop/primary_search/video-1.mp4'
-path_to_video = '/home/grigorii/Desktop/homo_video'
-path_to_save_frames = '/home/grigorii/Desktop/homography/test_frames'
+path_to_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
 maxSize_ = (200,40)
 time_per_frame_sec = 0
 min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
-frames_threshold = 25 # finalize a plate if doesn't appear this times of frames
+frames_threshold = 10 # finalize a plate if doesn't appear this times of frames
 
 
 def output_plateNumber(img):
@@ -86,8 +85,6 @@ def get_weighted_speed(number, frames_list, plates_coords, hom):
     return (speed_overall + speed_av) / 2
         
 
-
-
 if __name__ == "__main__":
     frame_counter = 0
     plates_in_frame = {}
@@ -95,26 +92,35 @@ if __name__ == "__main__":
     plates_mean_coords_in_frame = {} # coords of the plate center point
     plates_coords = {} # new dict for calculating speed between any frames of the video
 
-    # distances between points in meters
-    bc = 5
-    ad = 6
-    cd = 5.5
-    ac = 7.8
-    bd = 7.1
+    # coordinates of the real points
+    a = [11.8186, 30.4219]
+    b = [11.8186, -0.0931]
+    c = [0, 0]
+    d = [0.3212, 16.2902]
+    e = [6.3485, 29.5769]
+    f = [6.32664, 22.3198]
+    g = [6.31042, 14.2978]
+    h = [6.33798, 2.88398]
     # coordinates of the corresponding points on the image
-    A = [1659, 680]
-    B = [1837, 249]
-    C = [652, 239]
-    D = [15, 605]
-    pts_src =  np.array([A, B, C, D])
-    hom = H(bc, ad, cd, ac, bd, pts_src)
-    hom.find_homography()
+    A = [1728, 786]
+    B = [1865, 49]
+    C = [615, 65]
+    D = [140, 325]
+    E = [560, 731]
+    F = [844, 461]
+    G = [1048, 263]
+    H = [1242, 83]
+    pts_src =  np.array([A, B, C, D, E, F, G, H])
+    pts_real =  np.array([a, b, c, d, e, f, g, h])
+    hom = Homography(pts_src, pts_real)
 
-    cap = cv.VideoCapture(path_to_video)
-    cap.set(cv.CAP_PROP_POS_AVI_RATIO, 1)
-    video_length_msec = cap.get(cv.CAP_PROP_POS_MSEC)
-    frames_num = cap.get(cv.CAP_PROP_POS_FRAMES)
-    time_per_frame_sec = video_length_msec / frames_num / 1000 # to get sec instead of msec
+    # cap = cv.VideoCapture(path_to_video)
+    # cap.set(cv.CAP_PROP_POS_AVI_RATIO, 1)
+    # video_length_msec = cap.get(cv.CAP_PROP_POS_MSEC)
+    # frames_num = cap.get(cv.CAP_PROP_POS_FRAMES)
+    # time_per_frame_sec = video_length_msec / frames_num / 1000 # to get sec instead of msec
+    clip = VideoFileClip(path_to_video)
+    time_per_frame_sec = 1 / clip.fps #TODO может быть неточной цифрой, т.к. на видео некоторые кадры пропускаются
     
     plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
@@ -127,7 +133,7 @@ if __name__ == "__main__":
         if ret is False:
             break
             raise ValueError('Cannot read a stream')
-        
+
         # get plates via VJ haar
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         plates = plate_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=3, minSize=minSize_, maxSize=maxSize_)
@@ -202,7 +208,7 @@ if __name__ == "__main__":
                     plates_to_del.append(key)
                     continue
                 speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                print_('{} - {}'.format(key, speed))
+                print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -211,8 +217,8 @@ if __name__ == "__main__":
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
 
-        print_(frame_counter)
-        if frame_counter == 50:
+        # print_(frame_counter)
+        if frame_counter == 350:
             break
             # print()
 
