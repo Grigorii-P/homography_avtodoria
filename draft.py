@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import json
 import subprocess
 from homography import print_
+import cv2 as cv
 
 # with open('exp.json', 'r') as f:
 #     experiment = json.load(f)
@@ -15,10 +16,6 @@ from homography import print_
 # plt.show()
 
 
-filename = '/home/grigorii/Desktop/momentum_speed/homo_video'
+path_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
 
-from moviepy.editor import VideoFileClip
-clip = VideoFileClip(filename)
-print(clip.size)
-print(clip.duration)
-print(clip.fps)
+np.fft.fft2

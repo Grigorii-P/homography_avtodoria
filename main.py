@@ -19,6 +19,7 @@ alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M',
 minSize_ = (50,10)
 maxSize_ = (200,40)
 time_per_frame_sec = 0
+num_frames_in_video = 6540
 min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
 frames_threshold = 10 # finalize a plate if doesn't appear this times of frames
 
@@ -114,13 +115,8 @@ if __name__ == "__main__":
     pts_real =  np.array([a, b, c, d, e, f, g, h])
     hom = Homography(pts_src, pts_real)
 
-    # cap = cv.VideoCapture(path_to_video)
-    # cap.set(cv.CAP_PROP_POS_AVI_RATIO, 1)
-    # video_length_msec = cap.get(cv.CAP_PROP_POS_MSEC)
-    # frames_num = cap.get(cv.CAP_PROP_POS_FRAMES)
-    # time_per_frame_sec = video_length_msec / frames_num / 1000 # to get sec instead of msec
     clip = VideoFileClip(path_to_video)
-    time_per_frame_sec = 1 / clip.fps #TODO может быть неточной цифрой, т.к. на видео некоторые кадры пропускаются
+    time_per_frame_sec = clip.duration / num_frames_in_video
     
     plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
@@ -128,6 +124,7 @@ if __name__ == "__main__":
 
     # work on each incoming frame
     cap = cv.VideoCapture(path_to_video)
+    res_file = open('RESULT', 'w')
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -208,7 +205,8 @@ if __name__ == "__main__":
                     plates_to_del.append(key)
                     continue
                 speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
+                # print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
+                res_file.write('{} {}\n'.format(key, speed))
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -217,13 +215,17 @@ if __name__ == "__main__":
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
 
-        # print_(frame_counter)
-        if frame_counter == 350:
-            break
-            # print()
+        print(frame_counter)
+        # if frame_counter == 100:
+        #     break
+        #     # print()
 
-    # experiment = {k:v for k,v in experiment.items() if v != num_duplicates}
-    # with open('exp.json', 'w') as f:
-    #     json.dump(experiment, f)
-        
-    # cv.destroyAllWindows()
+    #TODO построить гистограмму ошибок (с расстоянием левенштейна для похожих слов 
+    # или можно просто сверять с TARGETS и смотреть тоьлко на номера из этого списка)
+    #TODO изменить тип подсчета скорости, убрать среднюю сделать мгновенную или наоборот
+    #TODO заскринить одну машину и посмотреть прямо на фотках, сколько она проехала
+    #TODO график разброса скоростей между соседними фреймами - отличие средней скорости как раз может отличаться от мгновенной своей усредненностью
+    #TODO мерить только мгновенные скорости, брать самую близкую к эталонной и строить гистограмму ошибок
+
+    res_file.close() 
+    cv.destroyAllWindows()
