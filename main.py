@@ -1,19 +1,21 @@
-#Первичное обнаружение ГРЗ в видеопотоке и распознавание её содержимого
 import numpy as np
 import cv2 as cv
 import sys
 import caffe
 import time
+import json
 from os.path import join
 from homography import Homography, print_
-import json
+from homography_data import *
 from moviepy.editor import VideoFileClip
+import matplotlib.pyplot as plt
 
 
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
 path_to_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
+path_plots = '/home/grigorii/Desktop/momentum_speed/plots'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
@@ -48,18 +50,71 @@ def target_list(path_to_file):
         return content
 
 
-def get_curr_speed(plates_coords, frame, hom):
+def levenshtein(seq1, seq2):
+    '''
+    difference distance between two words
+    '''
+    size_x = len(seq1) + 1
+    size_y = len(seq2) + 1
+    matrix = np.zeros ((size_x, size_y))
+    for x in range(size_x):
+        matrix [x, 0] = x
+    for y in range(size_y):
+        matrix [0, y] = y
+
+    for x in range(1, size_x):
+        for y in range(1, size_y):
+            if seq1[x-1] == seq2[y-1]:
+                matrix [x,y] = min(
+                    matrix[x-1, y] + 1,
+                    matrix[x-1, y-1],
+                    matrix[x, y-1] + 1
+                )
+            else:
+                matrix [x,y] = min(
+                    matrix[x-1,y] + 1,
+                    matrix[x-1,y-1] + 1,
+                    matrix[x,y-1] + 1
+                )
+    # returns the number of changes to be made in order to get two equal words
+    return (matrix[size_x - 1, size_y - 1])
+
+
+def get_momentum_speeds(number, frames_list, plates_coords, hom):
     global time_per_frame_sec
-    curr_cars = plates_coords[frame].keys()
-    prev_cars = plates_coords[frame - 1].keys()
-    plates_in_both_frames = list(set(curr_cars).intersection(prev_cars))
-    if plates_in_both_frames:
-        for number in plates_in_both_frames:
-            src = plates_coords[frame - 1][number]
-            dst = plates_coords[frame][number]
-            dist_meters = hom.get_point_transform(src, dst)
-            speed = dist_meters / time_per_frame_sec * 3.6 # km/h
-            print('{} - {} km/h'.format(number, speed))
+    
+    x, y = [], []
+    frames = [x - min(frames_list) for x in frames_list]
+    for i in range(len(frames_list)-1):
+        src = plates_coords[frames_list[i]][number]
+        dst = plates_coords[frames_list[i+1]][number]
+        dist_meters = hom.get_point_transform(src, dst)
+        t = (frames_list[i+1] - frames_list[i]) * time_per_frame_sec
+        speed = dist_meters / t * 3.6
+        x.append(frames[i])
+        y.append(speed)
+        
+    median_list = y.copy()
+    median_list.sort()
+    len_ = len(median_list)
+    if len_ % 2 == 0:
+        median = (median_list[len_//2] + median_list[len_//2 - 1]) / 2
+    else:
+        median = median_list[len_//2]
+    return [x, y, median]
+
+
+def get_plots(data, speed_overall, speed_av):
+    global time_per_frame_sec
+    fig, ax = plt.subplots()
+    x, y, median = data[0], data[1], data[2]
+    ax.plot(x, y, label='momentum')
+    # ax.plot(x, [speed_overall] * len(x), label='overall speed')
+    ax.plot(x, [speed_av] * len(x), label='average')
+    ax.plot(x, [median] * len(x), label='median')
+    ax.set(xlabel='frames', ylabel='speed')
+    ax.legend()
+    fig.savefig(join(path_plots, key + '.png'))
 
 
 def get_weighted_speed(number, frames_list, plates_coords, hom):
@@ -83,8 +138,9 @@ def get_weighted_speed(number, frames_list, plates_coords, hom):
         dist_meters += hom.get_point_transform(coords[i], coords[i+1])
     speed_av = dist_meters / t * 3.6 # km/h
 
-    return (speed_overall + speed_av) / 2
-        
+    # return (speed_overall + speed_av) / 2
+    return speed_overall, speed_av
+
 
 if __name__ == "__main__":
     frame_counter = 0
@@ -92,25 +148,8 @@ if __name__ == "__main__":
     plates_ever_met = {} # {number : [frame_appearances]}
     plates_mean_coords_in_frame = {} # coords of the plate center point
     plates_coords = {} # new dict for calculating speed between any frames of the video
-
-    # coordinates of the real points
-    a = [11.8186, 30.4219]
-    b = [11.8186, -0.0931]
-    c = [0, 0]
-    d = [0.3212, 16.2902]
-    e = [6.3485, 29.5769]
-    f = [6.32664, 22.3198]
-    g = [6.31042, 14.2978]
-    h = [6.33798, 2.88398]
-    # coordinates of the corresponding points on the image
-    A = [1728, 786]
-    B = [1865, 49]
-    C = [615, 65]
-    D = [140, 325]
-    E = [560, 731]
-    F = [844, 461]
-    G = [1048, 263]
-    H = [1242, 83]
+    plots = {}
+    
     pts_src =  np.array([A, B, C, D, E, F, G, H])
     pts_real =  np.array([a, b, c, d, e, f, g, h])
     hom = Homography(pts_src, pts_real)
@@ -124,7 +163,7 @@ if __name__ == "__main__":
 
     # work on each incoming frame
     cap = cv.VideoCapture(path_to_video)
-    res_file = open('RESULT', 'w')
+    # res_file = open('RESULT', 'w')
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -145,7 +184,6 @@ if __name__ == "__main__":
                     x_new, y_new, w_new, h_new = x + item[0], y + item[1], item[2], item[3]
                     haar_imgs.append([x_new, y_new, w_new, h_new])
             plates = haar_imgs
-
         for i, (x,y,w,h) in enumerate(plates):
             d = 0
             try:
@@ -204,9 +242,12 @@ if __name__ == "__main__":
                 if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
-                speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                # speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
                 # print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
-                res_file.write('{} {}\n'.format(key, speed))
+                # res_file.write('{} {}\n'.format(key, speed))
+                plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
+                speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                get_plots(plots[key], speed_overall, speed_av)
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -216,16 +257,17 @@ if __name__ == "__main__":
         plates_mean_coords_in_frame.clear()
 
         print(frame_counter)
-        # if frame_counter == 100:
-        #     break
-        #     # print()
+        if frame_counter == 500:
+            break
 
+
+
+    #TODO для колеблющейся скорости сохранить фотки проездов и отметить те же точки на отгомографированной фотке
+    #TODO добавить к графикам реaльное значение скорости из TARGETS
     #TODO построить гистограмму ошибок (с расстоянием левенштейна для похожих слов 
     # или можно просто сверять с TARGETS и смотреть тоьлко на номера из этого списка)
-    #TODO изменить тип подсчета скорости, убрать среднюю сделать мгновенную или наоборот
-    #TODO заскринить одну машину и посмотреть прямо на фотках, сколько она проехала
-    #TODO график разброса скоростей между соседними фреймами - отличие средней скорости как раз может отличаться от мгновенной своей усредненностью
-    #TODO мерить только мгновенные скорости, брать самую близкую к эталонной и строить гистограмму ошибок
+    #TODO мерить только мгновенные скорости, брать самую близкую к эталонной (TARGETS) и строить гистограмму ошибок
+    #TODO попробовать с Левенштейном
 
-    res_file.close() 
+    # res_file.close()
     cv.destroyAllWindows()

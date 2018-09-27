@@ -1,8 +1,6 @@
 import numpy as np
-import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 import json
-import subprocess
 from homography import print_
 import cv2 as cv
 
@@ -16,6 +14,6 @@ import cv2 as cv
 # plt.show()
 
 
-path_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
-
-np.fft.fft2
+a = [5,3,9,8]
+a.sort()
+print(5//2)

@@ -6,7 +6,6 @@ from sympy.abc import x,y
 
 
 # solve((y+0.0931)^2+(x-11.8186)^2 = 30.170^2, (y-30.4219)^2+(x-11.8186)^2 = 5.535^2, [x, y])
-# COORDINATES: A(1,1), B(1.0), C(0,0), D(0,1)
 path_to_test_img = 'test.jpg'
 dst_size_height = 2000
 
