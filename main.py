@@ -15,12 +15,14 @@ path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/emb
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
 path_to_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
+path_to_timestamp_file = '/home/grigorii/Desktop/momentum_speed/timestamps'
 path_plots = '/home/grigorii/Desktop/momentum_speed/plots'
+path_to_homo_img = '../res.jpg'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
 maxSize_ = (200,40)
-time_per_frame_sec = 0
+time_ = 0
 num_frames_in_video = 6540
 min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
 frames_threshold = 10 # finalize a plate if doesn't appear this times of frames
@@ -48,6 +50,20 @@ def target_list(path_to_file):
         content = [x[:-1] for x in content]
         content = [x+'@'*(10-len(x)) for x in content]
         return content
+
+
+def get_timestamps():
+    global time_
+    with open(path_to_timestamp_file, 'r') as f:
+        time_ = {}
+        count = 0
+        for line in f.readlines():
+            time_[count] = int(line[:-1])
+            count += 1
+
+
+def get_time_between_frames(src_frame, dst_frame):
+    return abs(time_[dst_frame] - time_[src_frame])
 
 
 def levenshtein(seq1, seq2):
@@ -81,15 +97,14 @@ def levenshtein(seq1, seq2):
 
 
 def get_momentum_speeds(number, frames_list, plates_coords, hom):
-    global time_per_frame_sec
-    
+    global time_
     x, y = [], []
     frames = [x - min(frames_list) for x in frames_list]
     for i in range(len(frames_list)-1):
         src = plates_coords[frames_list[i]][number]
         dst = plates_coords[frames_list[i+1]][number]
         dist_meters = hom.get_point_transform(src, dst)
-        t = (frames_list[i+1] - frames_list[i]) * time_per_frame_sec
+        t = get_time_between_frames(frames_list[i+1], frames_list[i]) / 1000
         speed = dist_meters / t * 3.6
         x.append(frames[i])
         y.append(speed)
@@ -105,11 +120,11 @@ def get_momentum_speeds(number, frames_list, plates_coords, hom):
 
 
 def get_plots(data, speed_overall, speed_av):
-    global time_per_frame_sec
     fig, ax = plt.subplots()
     x, y, median = data[0], data[1], data[2]
+    axes = plt.gca()
+    axes.set_ylim([0,70])
     ax.plot(x, y, label='momentum')
-    # ax.plot(x, [speed_overall] * len(x), label='overall speed')
     ax.plot(x, [speed_av] * len(x), label='average')
     ax.plot(x, [median] * len(x), label='median')
     ax.set(xlabel='frames', ylabel='speed')
@@ -117,11 +132,28 @@ def get_plots(data, speed_overall, speed_av):
     fig.savefig(join(path_plots, key + '.png'))
 
 
+def get_track_picture(number, frames_list, plates_coords, hom):
+    img = cv.imread(path_to_homo_img)
+    for item in frames_list:
+        coord = plates_coords[item][number]
+        coord_proj = np.dot(hom.h, np.array([[coord[0]], [coord[1]], [1]]))
+        coord_proj = coord_proj / coord_proj[-1]
+        img = cv.drawMarker(img, tuple(coord_proj[:2]), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=20, thickness=3, line_type=cv.LINE_AA)
+    cv.imwrite('../track_test/res.jpg', img)
+    
+    d = 0
+    for i in range(len(frames_list) - 1):
+        d_inst = hom.get_point_transform(plates_coords[frames_list[i]][number], plates_coords[frames_list[i + 1]][number])
+        d += d_inst
+        print('      {:.2f}'.format(d_inst))
+        print('SUM - {:.2f}'.format(d))
+
+
 def get_weighted_speed(number, frames_list, plates_coords, hom):
-    global time_per_frame_sec
+    global time_
     
     # time duration of the plate lifetime
-    t = (frames_list[-1] - frames_list[0]) * time_per_frame_sec
+    t = get_time_between_frames(frames_list[-1], frames_list[0]) / 1000
     
     # overall speed
     src = plates_coords[frames_list[0]][number]
@@ -154,15 +186,13 @@ if __name__ == "__main__":
     pts_real =  np.array([a, b, c, d, e, f, g, h])
     hom = Homography(pts_src, pts_real)
 
-    clip = VideoFileClip(path_to_video)
-    time_per_frame_sec = clip.duration / num_frames_in_video
-    
     plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
     net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
 
     # work on each incoming frame
     cap = cv.VideoCapture(path_to_video)
+    get_timestamps()
     # res_file = open('RESULT', 'w')
     while True:
         ret, img = cap.read()
@@ -223,14 +253,6 @@ if __name__ == "__main__":
         
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
 
-        # print the speed at each frame
-        # if frame_counter > 0:
-        #     if bool(plates_coords):
-        #         print('-'*50)
-        #         print('frame {}\n'.format(frame_counter))
-        #         get_curr_speed(plates_coords, frame_counter, hom)
-        #         print('-'*50)
-
         # calculate the average speed between first and the last frames of the number 
         # that didn't appear after `frames_threshold` times (finalize it)
         plates_to_del = []
@@ -246,8 +268,9 @@ if __name__ == "__main__":
                 # print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
                 # res_file.write('{} {}\n'.format(key, speed))
                 plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
-                speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                get_plots(plots[key], speed_overall, speed_av)
+                if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
+                    speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                    get_plots(plots[key], speed_overall, speed_av)
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -257,17 +280,16 @@ if __name__ == "__main__":
         plates_mean_coords_in_frame.clear()
 
         print(frame_counter)
-        if frame_counter == 500:
+        if frame_counter == 300:
             break
 
 
 
-    #TODO для колеблющейся скорости сохранить фотки проездов и отметить те же точки на отгомографированной фотке
+    #TODO создать RESULTS не со средними скоростями, а только с медианами
     #TODO добавить к графикам реaльное значение скорости из TARGETS
     #TODO построить гистограмму ошибок (с расстоянием левенштейна для похожих слов 
     # или можно просто сверять с TARGETS и смотреть тоьлко на номера из этого списка)
     #TODO мерить только мгновенные скорости, брать самую близкую к эталонной (TARGETS) и строить гистограмму ошибок
-    #TODO попробовать с Левенштейном
 
     # res_file.close()
     cv.destroyAllWindows()
