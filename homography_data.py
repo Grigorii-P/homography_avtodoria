@@ -1,4 +1,11 @@
-# COORDINATES: A(1,1), B(1.0), C(0,0), D(0,1)
+import numpy as np
+
+
+# RELATIVE COORDINATES: A(1,1), B(1.0), C(0,0), D(0,1)
+
+#
+## First experiment
+#
 # coordinates of the real points
 a = [11.8186, 30.4219]
 b = [11.8186, -0.0931]
@@ -17,3 +24,11 @@ E = [560, 731]
 F = [844, 461]
 G = [1048, 263]
 H = [1242, 83]
+
+pts_src_ =  np.array([A, B, C, D, E, F, G, H])
+pts_real_ =  np.array([a, b, c, d, e, f, g, h])
+
+#
+## Cruise control experiment
+#
+

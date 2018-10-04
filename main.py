@@ -44,14 +44,6 @@ def output_plateNumber(img):
     return number
 
 
-def target_list(path_to_file):
-    with open(path_to_file) as f:
-        content = f.readlines()
-        content = [x[:-1] for x in content]
-        content = [x+'@'*(10-len(x)) for x in content]
-        return content
-
-
 def get_timestamps():
     global time_
     with open(path_to_timestamp_file, 'r') as f:
@@ -182,9 +174,7 @@ if __name__ == "__main__":
     plates_coords = {} # new dict for calculating speed between any frames of the video
     plots = {}
     
-    pts_src =  np.array([A, B, C, D, E, F, G, H])
-    pts_real =  np.array([a, b, c, d, e, f, g, h])
-    hom = Homography(pts_src, pts_real)
+    hom = Homography(pts_src_, pts_real_)
 
     plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
@@ -193,7 +183,8 @@ if __name__ == "__main__":
     # work on each incoming frame
     cap = cv.VideoCapture(path_to_video)
     get_timestamps()
-    # res_file = open('RESULT', 'w')
+    # res_file = open('RESULT_NEW', 'w')
+    # c = 0
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -248,8 +239,15 @@ if __name__ == "__main__":
                 h_av += item[3]
                 count += 1
 
-            plates_mean_coords_in_frame[key] = [round(x_av / count + (w_av / count) / 2), 
-                                                round(y_av / count + (h_av / count) / 2)]
+            plates_mean_coords_in_frame[key] = [int(round(x_av / count + (w_av / count) / 2)), 
+                                                int(round(y_av / count + (h_av / count) / 2))]
+            
+            # save frames with a crossing on a plate
+            # if key == 'A878PC716@':
+            #     coord = plates_mean_coords_in_frame[key]
+            #     gray = cv.drawMarker(gray, (coord[0], coord[1]), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=15, thickness=2, line_type=cv.LINE_AA)
+            #     cv.imwrite('../temp/' + str(key) + '_' + str(c) + '.jpg', gray)
+            #     c += 1
         
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
 
@@ -264,13 +262,15 @@ if __name__ == "__main__":
                 if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
-                # speed = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                # print_('frame - {}, {} - {}'.format(frame_counter, key, speed))
-                # res_file.write('{} {}\n'.format(key, speed))
-                plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
-                if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
-                    speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                    get_plots(plots[key], speed_overall, speed_av)
+                # _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                # output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
+                # speed_median = output[-1]
+                # res_file.write('{} {:.1f} {:.1f}\n'.format(key, speed_av, speed_median))
+                # plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
+                # if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
+                #     speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                #     get_plots(plots[key], speed_overall, speed_av)
+
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -280,16 +280,10 @@ if __name__ == "__main__":
         plates_mean_coords_in_frame.clear()
 
         print(frame_counter)
-        if frame_counter == 300:
+        if frame_counter == 2000:
             break
 
-
-
-    #TODO создать RESULTS не со средними скоростями, а только с медианами
-    #TODO добавить к графикам реaльное значение скорости из TARGETS
-    #TODO построить гистограмму ошибок (с расстоянием левенштейна для похожих слов 
-    # или можно просто сверять с TARGETS и смотреть тоьлко на номера из этого списка)
-    #TODO мерить только мгновенные скорости, брать самую близкую к эталонной (TARGETS) и строить гистограмму ошибок
+    #TODO гистограмму ошибок с расстоянием левенштейна
 
     # res_file.close()
     cv.destroyAllWindows()

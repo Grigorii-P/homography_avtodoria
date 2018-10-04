@@ -78,10 +78,10 @@ class Homography:
         # project a point from original image to the projection
         src_proj = np.dot(self.h,np.array([[src[0]],[src[1]],[1]]))
         dst_proj = np.dot(self.h,np.array([[dst[0]],[dst[1]],[1]]))
-        #TODO проверка на отрицательные координаты,
-        #когда поймали машину вне рамки нашего обзора - продумать момент
         src_proj = src_proj / src_proj[-1]
         dst_proj = dst_proj / dst_proj[-1]
         dist = sqrt((src_proj[0] - dst_proj[0])**2 + (src_proj[1] - dst_proj[1])**2)
         dist_meters = dist / self.scale
         return dist_meters
+
+
