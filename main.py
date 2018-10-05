@@ -4,6 +4,7 @@ import sys
 import caffe
 import time
 import json
+import os
 from os.path import join
 from homography import Homography, print_
 from homography_data import *
@@ -14,8 +15,8 @@ import matplotlib.pyplot as plt
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
-path_to_video = '/home/grigorii/Desktop/momentum_speed/homo_video'
-path_to_timestamp_file = '/home/grigorii/Desktop/momentum_speed/timestamps'
+path_to_video_and_timestamp = '/home/grigorii/Desktop/momentum_speed/video_cruise_control'
+path_to_targets = '/home/grigorii/Desktop/momentum_speed/code/targets'
 path_plots = '/home/grigorii/Desktop/momentum_speed/plots'
 path_to_homo_img = '../res.jpg'
 
@@ -23,9 +24,9 @@ alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M',
 minSize_ = (50,10)
 maxSize_ = (200,40)
 time_ = 0
-num_frames_in_video = 6540
 min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
 frames_threshold = 10 # finalize a plate if doesn't appear this times of frames
+total_frames_num = 0
 
 
 def output_plateNumber(img):
@@ -44,13 +45,15 @@ def output_plateNumber(img):
     return number
 
 
-def get_timestamps():
+def get_timestamps(path_to_timestamp_file):
     global time_
     with open(path_to_timestamp_file, 'r') as f:
         time_ = {}
         count = 0
-        for line in f.readlines():
-            time_[count] = int(line[:-1])
+        f = open(path_to_timestamp_file, 'r')
+        lines = f.read().splitlines()[:-1]
+        for line in lines:
+            time_[count] = int(line)
             count += 1
 
 
@@ -166,7 +169,8 @@ def get_weighted_speed(number, frames_list, plates_coords, hom):
     return speed_overall, speed_av
 
 
-if __name__ == "__main__":
+def loop_video(video, timestamp, res_file, targets):
+    global total_frames_num
     frame_counter = 0
     plates_in_frame = {}
     plates_ever_met = {} # {number : [frame_appearances]}
@@ -174,27 +178,24 @@ if __name__ == "__main__":
     plates_coords = {} # new dict for calculating speed between any frames of the video
     plots = {}
     
-    hom = Homography(pts_src_, pts_real_)
-
-    plate_cascade = cv.CascadeClassifier(path_to_cascade)
-    caffe.set_mode_cpu()
-    net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
-
+    res_file.write('-'*30 + '\n')
+    res_file.write('{} Speed: {}\n'.format(video, targets[video]))
+    res_file.write('-'*30 + '\n')
+    
+    cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
+    get_timestamps(join(path_to_video_and_timestamp, timestamp))
+    
     # work on each incoming frame
-    cap = cv.VideoCapture(path_to_video)
-    get_timestamps()
-    # res_file = open('RESULT_NEW', 'w')
-    # c = 0
     while True:
         ret, img = cap.read()
         if ret is False:
             break
             raise ValueError('Cannot read a stream')
-
+        
         # get plates via VJ haar
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         plates = plate_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=3, minSize=minSize_, maxSize=maxSize_)
-
+        
         # second iter for VJ
         if type(plates) is np.ndarray:
             haar_imgs = []
@@ -205,13 +206,12 @@ if __name__ == "__main__":
                     x_new, y_new, w_new, h_new = x + item[0], y + item[1], item[2], item[3]
                     haar_imgs.append([x_new, y_new, w_new, h_new])
             plates = haar_imgs
-        for i, (x,y,w,h) in enumerate(plates):
+        for (x,y,w,h) in plates:
             d = 0
             try:
                 number = output_plateNumber(gray[y-d:y+h+d, x:x+w])
             except:
                 number = output_plateNumber(gray[y:y+h, x:x+w])
-
             # put each number with its plates into the `plates_in_frame`
             # (there might be more than one plate for each number in one frame)
             if number in plates_in_frame:
@@ -220,7 +220,7 @@ if __name__ == "__main__":
                 plates_in_frame[number] = new_rect
             else:
                 plates_in_frame[number] = [(x,y,w,h)]
-
+        
         # calculate the mean plate for each number in one frame
         for key in plates_in_frame.keys():
             if key in plates_ever_met:
@@ -229,7 +229,6 @@ if __name__ == "__main__":
                 plates_ever_met[key] = frames
             else:
                 plates_ever_met[key] = [frame_counter]
-
             coords = plates_in_frame[key]
             x_av, y_av, w_av, h_av, count = 0, 0, 0, 0, 0 # av - average
             for item in coords:
@@ -238,7 +237,7 @@ if __name__ == "__main__":
                 w_av += item[2]
                 h_av += item[3]
                 count += 1
-
+            
             plates_mean_coords_in_frame[key] = [int(round(x_av / count + (w_av / count) / 2)), 
                                                 int(round(y_av / count + (h_av / count) / 2))]
             
@@ -250,7 +249,7 @@ if __name__ == "__main__":
             #     c += 1
         
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
-
+        
         # calculate the average speed between first and the last frames of the number 
         # that didn't appear after `frames_threshold` times (finalize it)
         plates_to_del = []
@@ -262,28 +261,56 @@ if __name__ == "__main__":
                 if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
-                # _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                # output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
-                # speed_median = output[-1]
-                # res_file.write('{} {:.1f} {:.1f}\n'.format(key, speed_av, speed_median))
+                _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
+                speed_median = output[-1]
+                #TODO добавить проверку по левенштейну
+                res_file.write('{} {:.1f} {:.1f}\n'.format(key, speed_av, speed_median))
                 # plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
                 # if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
                 #     speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
                 #     get_plots(plots[key], speed_overall, speed_av)
-
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
-
+        
         frame_counter += 1
+        total_frames_num += 1
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
+        
+        print('frames - {}, total - {}'.format(frame_counter, total_frames_num))
+        # if total_frames_num == 100:
+        #     return False
+    return True
 
-        print(frame_counter)
-        if frame_counter == 2000:
+
+if __name__ == "__main__":
+    res_file = open('results_new', 'w')
+    with open(path_to_targets, 'r') as targets_file:
+        lines = targets_file.read().splitlines()
+    targets = dict((x.split(' ')[0], float(x.split(' ')[1])) for x in lines)
+    
+    hom = Homography(np.array(pts_src_), np.array(pts_real_))
+
+    plate_cascade = cv.CascadeClassifier(path_to_cascade)
+    caffe.set_mode_cpu()
+    net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
+
+    videos = []
+    timestamps = []
+    files = os.listdir(path_to_video_and_timestamp)
+    for f in files:
+        if not f.endswith('_timestamps'):
+            videos.append(f)
+            timestamps.append(f + '_timestamps')
+    v_t = dict(zip(videos, timestamps))
+
+    for video, timestamp in v_t.items():
+        if not loop_video(video, timestamp, res_file, targets):
             break
 
-    #TODO гистограмму ошибок с расстоянием левенштейна
-
-    # res_file.close()
+    res_file.close()
     cv.destroyAllWindows()
+
+#TODO почему в последних трех видео скорость +3 кмч
