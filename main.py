@@ -16,7 +16,7 @@ path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/emb
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
 path_to_video_and_timestamp = '/home/grigorii/Desktop/momentum_speed/video_cruise_control'
-path_to_targets = '/home/grigorii/Desktop/momentum_speed/code/targets'
+path_to_targets = '/home/grigorii/Desktop/momentum_speed/experiments/targets'
 path_plots = '/home/grigorii/Desktop/momentum_speed/plots'
 path_to_homo_img = '../res.jpg'
 
@@ -178,14 +178,15 @@ def loop_video(video, timestamp, res_file, targets):
     plates_coords = {} # new dict for calculating speed between any frames of the video
     plots = {}
     
-    res_file.write('-'*30 + '\n')
-    res_file.write('{} Speed: {}\n'.format(video, targets[video]))
-    res_file.write('-'*30 + '\n')
+    # res_file.write('-'*30 + '\n')
+    # res_file.write('{} Speed: {}\n'.format(video, targets[video]))
+    # res_file.write('-'*30 + '\n')
     
     cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
     get_timestamps(join(path_to_video_and_timestamp, timestamp))
     
     # work on each incoming frame
+    c = 0
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -241,11 +242,25 @@ def loop_video(video, timestamp, res_file, targets):
             plates_mean_coords_in_frame[key] = [int(round(x_av / count + (w_av / count) / 2)), 
                                                 int(round(y_av / count + (h_av / count) / 2))]
             
-            # save frames with a crossing on a plate
-            # if key == 'A878PC716@':
+            # # save frames with a crossing on a plate
+            # if key == 'A283CO716@':
             #     coord = plates_mean_coords_in_frame[key]
             #     gray = cv.drawMarker(gray, (coord[0], coord[1]), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=15, thickness=2, line_type=cv.LINE_AA)
-            #     cv.imwrite('../temp/' + str(key) + '_' + str(c) + '.jpg', gray)
+            #     cv.imwrite('../track_test/' + str(key) + '_' + str(c) + '.jpg', gray)
+
+            #     font                   = cv.FONT_HERSHEY_SIMPLEX
+            #     bottomLeftCornerOfText = (10,500)
+            #     fontScale              = 1
+            #     fontColor              = (255,255,255)
+            #     lineType               = 2
+
+            #     cv.putText(img,'Hello World!', 
+            #         bottomLeftCornerOfText, 
+            #         font, 
+            #         fontScale,
+            #         fontColor,
+            #         lineType)
+
             #     c += 1
         
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
@@ -261,11 +276,10 @@ def loop_video(video, timestamp, res_file, targets):
                 if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
-                _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
-                output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
-                speed_median = output[-1]
-                #TODO добавить проверку по левенштейну
-                res_file.write('{} {:.1f} {:.1f}\n'.format(key, speed_av, speed_median))
+                # _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
+                # output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
+                # speed_median = output[-1]
+                # res_file.write('{} {:.1f} {:.1f}\n'.format(key, speed_av, speed_median))
                 # plots[key] = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
                 # if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
                 #     speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
@@ -286,7 +300,7 @@ def loop_video(video, timestamp, res_file, targets):
 
 
 if __name__ == "__main__":
-    res_file = open('results_new', 'w')
+    # res_file = open('../experiments/results_new', 'w')
     with open(path_to_targets, 'r') as targets_file:
         lines = targets_file.read().splitlines()
     targets = dict((x.split(' ')[0], float(x.split(' ')[1])) for x in lines)
@@ -304,13 +318,14 @@ if __name__ == "__main__":
         if not f.endswith('_timestamps'):
             videos.append(f)
             timestamps.append(f + '_timestamps')
-    v_t = dict(zip(videos, timestamps))
+    # v_t = dict(zip(videos, timestamps))
+    v_t = {'regid_1538565891498_ffv1_45':'regid_1538565891498_ffv1_45_timestamps'}
 
     for video, timestamp in v_t.items():
-        if not loop_video(video, timestamp, res_file, targets):
+        if not loop_video(video, timestamp, None, targets):
             break
 
-    res_file.close()
+    # res_file.close()
     cv.destroyAllWindows()
 
 #TODO почему в последних трех видео скорость +3 кмч
