@@ -1,102 +1,47 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import json
-import cv2
-import os
-from time import time
-from os.path import join
-from annoy import AnnoyIndex
-from itertools import combinations_with_replacement as cwr
 import itertools
-
-path_to_imgs = '../repers/plates1000'
-path_to_save = '../repers/binary'
-
-#TODO нормализация, выравнивание изображения
-
-# _, cnts, _ = cv2.findContours(img.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-# for c in cnts:
-#     peri = cv2.arcLength(c, True)
-#     approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-#     x, y, w, h = cv2.boundingRect(approx)
-#     cv2.rectangle(img, (x, y), (x + w, y + h), (100, 100, 100), 1)
-#     # if h >= 15:
-#     #     # if height is enough
-#     #     # create rectangle for bounding
-#     #     rect = (x, y, w, h)
-#     #     rects.append(rect)
-#     #     cv2.rectangle(roi_copy, (x, y), (x+w, y+h), (0, 255, 0), 1)
-
-# # cv2.rectangle(img, (5, 5), (25, 25), (100, 100, 100), 1)
-# cv2.imwrite(path_to_save, img)
-
-path_to_imgs = '/home/grigorii/Desktop/momentum_speed/repers/annoy_test'
+import json
+import os
+from itertools import combinations_with_replacement as cwr
+from os.path import join
+from time import time
+import matplotlib.pyplot as plt
+import numpy as np
+from annoy import AnnoyIndex
+import cv2 as cv
 
 
-imgs_size = (150, 30)
-search_w, search_h = 10, 10
-num_trees = 10
+# path_to_video_and_timestamp = '/home/grigorii/Desktop/momentum_speed/video_cruise_control'
+# video = 'regid_1538565891498_ffv1_45'
 
-im_src = cv2.imread(join(path_to_imgs, 'B418EY716@_13.jpg'), 0)
-im_dst = cv2.imread(join(path_to_imgs, 'B418EY716@_14.jpg'), 0)
-im_src = cv2.resize(im_src, imgs_size)
-im_dst = cv2.resize(im_dst, imgs_size)
-w = im_src.shape[1]
-h = im_src.shape[0]
+# cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
+# c = 0
+# while True:
+#     ret, img = cap.read()
+#     c += 1
+#     if ret is False:
+#         break
+#     print(c)
 
-f = search_w * search_h
-t = AnnoyIndex(f)
-offset = w * h // f
-scales = [] #TODO нужнор подобрать так, чтобы нашим окном по-прежнем можно было пройтись по ресайзнутой картинке
 
-# t0 = time()
-# num = 1000
-# for i in range(num):
-ind_1, ind_2 = 0, offset
-ind_1_list = []
-ind_2_list = []
-distances = {}
-for scale in scales:
-    new_w = int(w * scale)
-    new_h = int(h * scale)
-    im_dst = cv2.resize(im_dst, (new_w, new_h))
-    for i in range(0, w, search_w):
-        for j in range(0, h, search_h):
-            t.add_item(ind_1, im_src[j:j+search_h, i:i+search_w].flatten())
-            ind_1_list.append(ind_1)
-            ind_1 += 1
-            # temp = im_dst[j:j+search_h, i:i+search_w]
-            # temp = cv2.resize(temp, (100, 100))
-            # cv2.imshow('temp', temp)
-            # cv2.waitKey(0)
-    for i in range(0, new_w, search_w):
-        for j in range(0, new_h, search_h):
-            t.add_item(ind_2, im_dst[j:j+search_h, i:i+search_w].flatten())
-            ind_2_list.append(ind_2)
-            ind_2 += 1
+path_to_imgs = '../repers/annoy_test'
 
-t.build(num_trees)
-# t.save('../repers/annoy_test/test.ann')
+img_size = (450, 90)
+templates = os.listdir(path_to_imgs)
+templates = [x for x in templates if x.endswith('.jpg') and '@' in x]
 
-combinations = list(itertools.product(ind_1_list, ind_2_list))
-for combo in combinations:
-    dist = t.get_distance(combo[0], combo[1])
-    distances[combo] = dist
-combs_sorted_by_dist = sorted(distances.items(), key=lambda kv: kv[1])
-# best = combs_sorted_by_dist[-1]
-# print('average time - {} sec'.format((time()-t0)/num))
+# for i, temp in enumerate(templates):
+#     img = cv.imread(join(path_to_imgs, temp), 0) #'A283CO716@_76.jpg'
+#     x, y = img.shape[1] // 2, img.shape[0] // 2
+#     img = cv.drawMarker(img, (x, y), (255,0,0), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+#     img = cv.resize(img, img_size)
+#     # cv.imwrite(join(path_to_imgs, 'first.jpg'), img)
+#     cv.imshow('asd', img)
+#     cv.waitKey(0)
 
-best = combs_sorted_by_dist[-3:]
-for i in range(len(best)):
-    im_1 = t.get_item_vector(best[i][0][0])
-    vec = np.reshape(im_1, (search_h, search_w))
-    img = cv2.resize(vec, (100, 100))
-    img = img.astype(dtype=np.uint8)
-    cv2.imwrite(join(path_to_imgs + '/test', 'first_' + str(i) + '.jpg'), img)
 
-    im_2 = t.get_item_vector(best[i][0][1])
-    vec = np.reshape(im_2, (search_h, search_w))
-    img = cv2.resize(vec, (100, 100))
-    img = img.astype(dtype=np.uint8)
-    cv2.imwrite(join(path_to_imgs + '/test', 'second_' + str(i) + '.jpg'), img)
+for i, temp in enumerate(templates):
+    img = cv.imread(join(path_to_imgs, temp), 0)
+    x, y = img.shape[1] // 2, img.shape[0] // 2
+    img = cv.drawMarker(img, (x, y), (255,0,0), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+    img = cv.resize(img, img_size)
+    cv.imwrite(join(path_to_imgs, str(i) + str(i) + '.jpg'), img)

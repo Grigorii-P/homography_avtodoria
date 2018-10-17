@@ -2,9 +2,10 @@ import numpy as np
 import cv2 as cv
 import sys
 import caffe
-import time
+from time import time
 import json
 import os
+import pickle
 from os.path import join
 from homography import Homography, print_
 from homography_data import *
@@ -174,19 +175,26 @@ def loop_video(video, timestamp, res_file, targets):
     frame_counter = 0
     plates_in_frame = {}
     plates_ever_met = {} # {number : [frame_appearances]}
+    plates_ever_met_total = {} # additional dict for `visualize_reper_points`
     plates_mean_coords_in_frame = {} # coords of the plate center point
     plates_coords = {} # new dict for calculating speed between any frames of the video
+    plate_descriptors = {}
+    plates_descriptors_all_frames = {}
+    # frames = [] # save frame_counters to visualize_reper_points afterwards
     plots = {}
     
+    '''
     # res_file.write('-'*30 + '\n')
     # res_file.write('{} Speed: {}\n'.format(video, targets[video]))
     # res_file.write('-'*30 + '\n')
-    
+    '''
+
     cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
     get_timestamps(join(path_to_video_and_timestamp, timestamp))
+    sift = cv.xfeatures2d.SIFT_create()
+    time_all = 0
     
     # work on each incoming frame
-    c = 0
     while True:
         ret, img = cap.read()
         if ret is False:
@@ -230,41 +238,38 @@ def loop_video(video, timestamp, res_file, targets):
                 plates_ever_met[key] = frames
             else:
                 plates_ever_met[key] = [frame_counter]
+
+            if key in plates_ever_met_total:
+                frames = plates_ever_met_total[key]
+                frames.append(frame_counter)
+                plates_ever_met_total[key] = frames
+            else:
+                plates_ever_met_total[key] = [frame_counter]
+
             coords = plates_in_frame[key]
-            x_av, y_av, w_av, h_av, count = 0, 0, 0, 0, 0 # av - average
+            x_sum, y_sum, w_sum, h_sum, count = 0, 0, 0, 0, 0
             for item in coords:
-                x_av += item[0]
-                y_av += item[1]
-                w_av += item[2]
-                h_av += item[3]
+                x_sum += item[0]
+                y_sum += item[1]
+                w_sum += item[2]
+                h_sum += item[3]
                 count += 1
+            x_av, y_av, w_av, h_av = x_sum // count, y_sum // count, w_sum // count, h_sum // count #av - average
             
-            plates_mean_coords_in_frame[key] = [int(round(x_av / count + (w_av / count) / 2)), 
-                                                int(round(y_av / count + (h_av / count) / 2))]
+            plates_mean_coords_in_frame[key] = [x_av + w_av // 2, y_av + h_av // 2]
+            t0 = time()
+            kp, des = sift.detectAndCompute(gray[y_av:y_av + h_av, x_av:x_av + w_av], None)
+            plate_descriptors[key] = [kp, des, (x_av, y_av, w_av, h_av)]
+           
+            '''
+            # save frames with a crossing on a plate
+            crossing()
+            '''
             
-            # # save frames with a crossing on a plate
-            # if key == 'A283CO716@':
-            #     coord = plates_mean_coords_in_frame[key]
-            #     gray = cv.drawMarker(gray, (coord[0], coord[1]), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=15, thickness=2, line_type=cv.LINE_AA)
-            #     cv.imwrite('../track_test/' + str(key) + '_' + str(c) + '.jpg', gray)
-
-            #     font                   = cv.FONT_HERSHEY_SIMPLEX
-            #     bottomLeftCornerOfText = (10,500)
-            #     fontScale              = 1
-            #     fontColor              = (255,255,255)
-            #     lineType               = 2
-
-            #     cv.putText(img,'Hello World!', 
-            #         bottomLeftCornerOfText, 
-            #         font, 
-            #         fontScale,
-            #         fontColor,
-            #         lineType)
-
-            #     c += 1
-        
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
-        
+        plates_descriptors_all_frames[frame_counter] = plate_descriptors.copy()
+
+        #TODO что если новая точка при трансформации выходит за пределы картинки
         # calculate the average speed between first and the last frames of the number 
         # that didn't appear after `frames_threshold` times (finalize it)
         plates_to_del = []
@@ -276,6 +281,7 @@ def loop_video(video, timestamp, res_file, targets):
                 if len(plates_ever_met[key]) < min_num_appearances:
                     plates_to_del.append(key)
                     continue
+                '''
                 # _, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
                 # output = get_momentum_speeds(key, plates_ever_met[key], plates_coords, hom)
                 # speed_median = output[-1]
@@ -284,6 +290,7 @@ def loop_video(video, timestamp, res_file, targets):
                 # if len(plots[key][0]) > 1: # we can't plot only one point, we need more than one
                 #     speed_overall, speed_av = get_weighted_speed(key, plates_ever_met[key], plates_coords, hom)
                 #     get_plots(plots[key], speed_overall, speed_av)
+                '''
                 plates_to_del.append(key)
         for item in plates_to_del:
             del plates_ever_met[item]
@@ -292,11 +299,68 @@ def loop_video(video, timestamp, res_file, targets):
         total_frames_num += 1
         plates_in_frame.clear()
         plates_mean_coords_in_frame.clear()
+        plate_descriptors.clear()
         
         print('frames - {}, total - {}'.format(frame_counter, total_frames_num))
-        # if total_frames_num == 100:
-        #     return False
-    return True
+        # if total_frames_num == 40:
+        #     break
+            # return False, None, None
+    
+    return True, plates_ever_met_total, plates_descriptors_all_frames
+
+
+def visualize_reper_points(plates_ever_met_total, plates_descriptors_all_frames):
+    path_to_imgs = '../repers/real_test'
+    target = 'B418EY716@'#'A283CO716@'
+    frames = plates_ever_met_total[target]
+    k = 2
+    ratio = 0.75
+    min_match_count = 10
+    
+    k_prev, d_prev, (x_av, y_av, w_av, h_av) = plates_descriptors_all_frames[frames[0]][target]
+    point_to_be_transformed = np.float32([w_av // 2, h_av // 2]).reshape(-1,1,2)
+
+    cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
+    frame_count = 0
+    while frame_count < frames[0]:
+        ret, img = cap.read()
+        frame_count += 1
+
+    _, first_img = cap.read()
+    first_img = cv.drawMarker(first_img, (x_av + w_av // 2, y_av + h_av // 2), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+    cv.imwrite(join(path_to_imgs, 'first.jpg'), first_img)
+
+    #TODO better use cv2.FlannBasedMatcher
+    bf = cv.BFMatcher()
+
+    for frame in frames[1:]:
+        while True:
+            ret, img = cap.read()
+            frame_count += 1
+            if frame_count == frame or ret is False:
+                break
+
+        k_next, d_next, (x_av, y_av, w_av, h_av) = plates_descriptors_all_frames[frame][target]
+        matches = bf.knnMatch(d_prev, d_next, k=k)
+        good = []
+        for m, n in matches:
+            if m.distance < ratio * n.distance:
+                good.append([m])
+
+        if len(good) > min_match_count:
+            src_pts = np.float32([ k_prev[m[0].queryIdx].pt for m in good ]).reshape(-1,1,2)
+            dst_pts = np.float32([ k_next[m[0].trainIdx].pt for m in good ]).reshape(-1,1,2)
+    
+            #TODO что за параметры такие - cv.RANSAC, 5.0
+            local_hom, _ = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
+            dst = cv.perspectiveTransform(point_to_be_transformed, local_hom)
+            img = cv.drawMarker(img, (int(x_av + dst[0][0][0]), int(y_av + dst[0][0][1])), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+            cv.imwrite(join(path_to_imgs, str(frame_count) + '.jpg'), img)
+    
+            k_prev, d_prev = k_next, d_next
+            point_to_be_transformed = dst
+        else:
+            print("Not enough matches are found - %d/%d" % (len(good), min_match_count))
 
 
 if __name__ == "__main__":
@@ -322,10 +386,13 @@ if __name__ == "__main__":
     v_t = {'regid_1538565891498_ffv1_45':'regid_1538565891498_ffv1_45_timestamps'}
 
     for video, timestamp in v_t.items():
-        if not loop_video(video, timestamp, None, targets):
+        flag, plates_ever_met, plates_descriptors_all_frames = loop_video(video, timestamp, None, targets)
+        if not flag:
             break
+
+    visualize_reper_points(plates_ever_met, plates_descriptors_all_frames)
+
+
 
     # res_file.close()
     cv.destroyAllWindows()
-
-#TODO почему в последних трех видео скорость +3 кмч
