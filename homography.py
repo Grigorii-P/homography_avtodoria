@@ -22,7 +22,7 @@ def find_coords(cd, a_b, b_a):
     equations = [(y-y1)**2 + (x-x1)**2 - b_a**2, (y-y2)**2 + (x-x2)**2 - a_b**2]
     solutions = solve_poly_system(equations, x, y)
     #TODO точка C может лежать чуть ниже точки B, 
-    # тогда solutions везде будут отрицательными - решить момент
+    # тогда solutions везде будут отрицательными
     for item in solutions:
         if item[0] >= 0 and item[1] >= 0:
             first = float(item[0])
@@ -70,6 +70,7 @@ class Homography:
         self.h, _ = cv2.findHomography(self.pts_src, pts_dst)
 
     def get_point_transform(self, src, dst):
+        #TODO use perspectiveTransform() instead
         # im_src = cv2.imread(path_to_test_img)
         # im_out = cv2.warpPerspective(im_src, self.h, (int(self.dst_size_width), int(dst_size_height)))
         # cv2.imwrite('test_result_8.jpg', im_out)
