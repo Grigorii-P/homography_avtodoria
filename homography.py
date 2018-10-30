@@ -36,7 +36,7 @@ class Homography:
         self.pts_src = pts_src
         self.pts_real = pts_real
 
-        # find the border coordinates which constitute a countur
+        # find the border coordinates which constitute a contour;
         # these points are corners in the resulting projection
         x_min, x_max = 1000, 0
         y_min, y_max = 1000, 0
@@ -67,7 +67,15 @@ class Homography:
         # print_(type(pts_dst[0]))
         # print_(type(pts_dst[0][0]))
 
-        self.h, _ = cv2.findHomography(self.pts_src, pts_dst)
+        # self.homs = []
+        # params = [cv2.RANSAC, cv2.RHO, cv2.LMEDS]
+        # nums = [1,2,3,4,5,6,7,8,9,10]
+        # for par in params:
+        #     for n in nums:
+        #         self.h, _ = cv2.findHomography(self.pts_src, pts_dst, par, n)
+        #         self.homs.append([self.h, par, n])
+        #TODO нужно больше одной гомографии
+        self.h, _ = cv2.findHomography(self.pts_src, pts_dst, cv2.RANSAC, 5.0)
 
     def get_point_transform(self, src, dst):
         #TODO use perspectiveTransform() instead
@@ -79,6 +87,16 @@ class Homography:
         # project a point from original image to the projection
         src_proj = np.dot(self.h,np.array([[src[0]],[src[1]],[1]]))
         dst_proj = np.dot(self.h,np.array([[dst[0]],[dst[1]],[1]]))
+        src_proj = src_proj / src_proj[-1]
+        dst_proj = dst_proj / dst_proj[-1]
+        dist = sqrt((src_proj[0] - dst_proj[0])**2 + (src_proj[1] - dst_proj[1])**2)
+        dist_meters = dist / self.scale
+        return dist_meters
+    
+    # for experiments in draft.py only
+    def get_point_transform_2(self, h, src, dst):
+        src_proj = np.dot(h,np.array([[src[0]],[src[1]],[1]]))
+        dst_proj = np.dot(h,np.array([[dst[0]],[dst[1]],[1]]))
         src_proj = src_proj / src_proj[-1]
         dst_proj = dst_proj / dst_proj[-1]
         dist = sqrt((src_proj[0] - dst_proj[0])**2 + (src_proj[1] - dst_proj[1])**2)

@@ -8,7 +8,7 @@ import os
 import pickle
 from os.path import join
 from homography import Homography, print_
-from homography_data import *
+from homography_data import pts_src_, pts_real_
 from moviepy.editor import VideoFileClip
 import matplotlib.pyplot as plt
 
@@ -16,18 +16,19 @@ import matplotlib.pyplot as plt
 path_to_model = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/embeded.prototxt"
 path_to_weights = "/home/grigorii/ssd480/talos/python/platedetection/zoo/twins/weights.caffemodel"
 path_to_cascade = "/home/grigorii/ssd480/talos/python/platedetection/haar/cascade_inversed_plates.xml"
-path_to_video_and_timestamp = '/home/grigorii/Desktop/momentum_speed/video_cruise_control'
+path_to_video_and_timestamp = '/home/grigorii/Desktop/momentum_speed/video_cruise_control/second_experiment/data'
 path_to_targets = '/home/grigorii/Desktop/momentum_speed/experiments/targets'
 path_plots = '/home/grigorii/Desktop/momentum_speed/plots'
 path_to_homo_img = '../res.jpg'
 
 alphabet = ['1','A','0','3','B','5','C','7','E','9','K','4','X','8','H','2','M','O','P','T','6','Y','@']
 minSize_ = (50,10)
-maxSize_ = (200,40)
+maxSize_ = (500,100)
 time_ = 0
 min_num_appearances = 2 # don't take into account plates that appear < `min_num_appearances` times
 frames_threshold = 10 # finalize a plate if doesn't appear this times of frames
 total_frames_num = 0
+time_btw_frames_sec = 1/15
 
 
 def output_plateNumber(img):
@@ -92,17 +93,16 @@ def levenshtein(seq1, seq2):
     return (matrix[size_x - 1, size_y - 1])
 
 
-def get_momentum_speeds(number, frames_list, plates_coords, hom):
+def get_momentum_speeds(frames_list, coords, hom):
     global time_
     x, y = [], []
-    frames = [x - min(frames_list) for x in frames_list]
     for i in range(len(frames_list)-1):
-        src = plates_coords[frames_list[i]][number]
-        dst = plates_coords[frames_list[i+1]][number]
+        src = coords[i]
+        dst = coords[i+1]
         dist_meters = hom.get_point_transform(src, dst)
-        t = get_time_between_frames(frames_list[i+1], frames_list[i]) / 1000
+        t = (frames_list[i+1] - frames_list[i]) * time_btw_frames_sec
         speed = dist_meters / t * 3.6
-        x.append(frames[i])
+        x.append(frames_list[i])
         y.append(speed)
         
     median_list = y.copy()
@@ -145,23 +145,20 @@ def get_track_picture(number, frames_list, plates_coords, hom):
         print('SUM - {:.2f}'.format(d))
 
 
-def get_weighted_speed(number, frames_list, plates_coords, hom):
+def get_weighted_speed(frames_list, coords, hom):
     global time_
     
     # time duration of the plate lifetime
-    t = get_time_between_frames(frames_list[-1], frames_list[0]) / 1000
+    t = (frames_list[-1] - frames_list[0]) * time_btw_frames_sec
     
     # overall speed
-    src = plates_coords[frames_list[0]][number]
-    dst = plates_coords[frames_list[-1]][number]
+    src = coords[0]
+    dst = coords[-1]
     dist_meters = hom.get_point_transform(src, dst)
     speed_overall = dist_meters / t * 3.6 # km/h
 
     # average speed
     dist_meters = 0
-    coords = []
-    for frame in frames_list:
-        coords.append(plates_coords[frame][number])
     for i in range(0, len(coords)-1):
         dist_meters += hom.get_point_transform(coords[i], coords[i+1])
     speed_av = dist_meters / t * 3.6 # km/h
@@ -189,7 +186,7 @@ def loop_video(video, timestamp, res_file, targets):
     '''
 
     cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
-    get_timestamps(join(path_to_video_and_timestamp, timestamp))
+    # get_timestamps(join(path_to_video_and_timestamp, timestamp))
     sift = cv.xfeatures2d.SIFT_create()
     
     # work on each incoming frame
@@ -266,8 +263,6 @@ def loop_video(video, timestamp, res_file, targets):
         plates_coords[frame_counter] = plates_mean_coords_in_frame.copy()
         plates_descriptors_all_frames[frame_counter] = plate_descriptors.copy()
 
-        #TODO что если новая точка при трансформации выходит за пределы картинки (тогда берем не середину, а один из дескрипторов) 
-        #TODO что если на первой (или промежуточной фотке) не нашли похожих дескрипторов
         # calculate the average speed between first and the last frames of the number 
         # that didn't appear after `frames_threshold` times (finalize it)
         plates_to_del = []
@@ -299,7 +294,7 @@ def loop_video(video, timestamp, res_file, targets):
         plate_descriptors.clear()
         
         print('frames - {}, total - {}'.format(frame_counter, total_frames_num))
-        # if total_frames_num == 30:
+        # if total_frames_num == 150:
         #     break
             # return False, None, None
     
@@ -307,16 +302,23 @@ def loop_video(video, timestamp, res_file, targets):
     return True, plates_ever_met_total, plates_descriptors_all_frames
 
 
-def visualize_reper_points(plates_ever_met_total, plates_descriptors_all_frames):
-    path_to_imgs = '../first_video/reper_experiment'
-    
-    targets = list(plates_ever_met_total.keys())#['X342CK116@', 'A661HO116@', 'C489XA116@']#, 'C493EC116@', 'X841XB116@']
-    frames = {}
-    for target in targets:
-        frames[target] = plates_ever_met_total[target]
+def visualize_reper_points(path_to_imgs, plates_ever_met_total, plates_descriptors_all_frames):
+    # numbers that we want to trace
+    os.system('mkdir ' + path_to_imgs)
+    target = 'A283CO716@'
+    targets = ['A283CO716@']
+    points = []
+    # get frames sequences for each of the above mentioned numbers
+    # for target in targets:
+    #     frames[target] = plates_ever_met_total[target]
+    if target in plates_ever_met_total:
+        frames = plates_ever_met_total[target]
+    else:
+        return 0, 0
 
+    # im_size = (1920, 1406)
     # params for kd trees
-    FLANN_INDEX_KDTREE = 0
+    FLANN_INDEX_KDTREE = 1 # might be 0 as well
     trees = 5
     checks = 50
     # params for finding the closest neighbours
@@ -324,29 +326,30 @@ def visualize_reper_points(plates_ever_met_total, plates_descriptors_all_frames)
     ratio = 0.75
     min_match_count = 4
     
-    #TODO посмотреть по документации, какое число соответствует реальному KDTREE
     index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = trees)
     search_params = dict(checks = checks)
-    #TODO may also try MSER algorithm (dropbox uses it in text detection)
     flann = cv.FlannBasedMatcher(index_params, search_params)
 
     cap = cv.VideoCapture(join(path_to_video_and_timestamp, video))
     frame_count_all = 0
+
+    # for each number run a video again and again
     for target in targets:
         cap.set(cv.CAP_PROP_POS_FRAMES, 0)
         
-        k_prev, d_prev, (x_av, y_av, w_av, h_av) = plates_descriptors_all_frames[frames[target][0]][target]
+        k_prev, d_prev, (x_av, y_av, w_av, h_av) = plates_descriptors_all_frames[frames[0]][target]
         point_to_be_transformed = np.float32([w_av // 2, h_av // 2]).reshape(-1,1,2)
         
-        while cap.get(1) < frames[target][0]:
+        while cap.get(1) < frames[0]:
             _, img = cap.read()
 
         _, first_img = cap.read()
-        first_img = cv.drawMarker(first_img, (x_av + w_av // 2, y_av + h_av // 2), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+        first_img = cv.drawMarker(first_img, (x_av + w_av // 2, y_av + h_av // 2), (34,139,34), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
         cv.imwrite(join(path_to_imgs, str(frame_count_all) + '.jpg'), first_img)
         frame_count_all += 1
+        points.append((x_av + w_av // 2, y_av + h_av // 2))
 
-        for frame in frames[target][1:]:
+        for frame in frames[1:]:
             while True:
                 ret, img = cap.read()
                 if cap.get(1)-1 == frame or ret is False:
@@ -362,27 +365,39 @@ def visualize_reper_points(plates_ever_met_total, plates_descriptors_all_frames)
             if len(good) > min_match_count:
                 src_pts = np.float32([ k_prev[m[0].queryIdx].pt for m in good ]).reshape(-1,1,2)
                 dst_pts = np.float32([ k_next[m[0].trainIdx].pt for m in good ]).reshape(-1,1,2)
-                #TODO что за параметры такие - cv.RANSAC, 5.0
                 local_hom, _ = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
                 dst = cv.perspectiveTransform(point_to_be_transformed, local_hom)
-                img = cv.drawMarker(img, (int(x_av + dst[0][0][0]), int(y_av + dst[0][0][1])), (0,0,255), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+                if len(good) > 7:
+                    img = cv.drawMarker(img, (int(x_av + dst[0][0][0]), int(y_av + dst[0][0][1])), (34,139,34), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
+                else:
+                    img = cv.drawMarker(img, (int(x_av + dst[0][0][0]), int(y_av + dst[0][0][1])), (0,0, 255), markerType=cv.MARKER_TILTED_CROSS, markerSize=10, thickness=1, line_type=cv.LINE_AA)
                 cv.imwrite(join(path_to_imgs, str(frame_count_all) + '.jpg'), img)
                 k_prev, d_prev = k_next, d_next
                 point_to_be_transformed = dst
                 frame_count_all += 1
+                points.append((int(x_av + dst[0][0][0]), int(y_av + dst[0][0][1])))
+                print("Num matches - %d/%d" % (len(good), min_match_count))
             else:
-                print("Not enough matches are found - %d/%d" % (len(good), min_match_count))
+                print("NOT ENOUGH MATCHES - %d/%d" % (len(good), min_match_count))
+                cv.imwrite(join(path_to_imgs, 'NOT ENOUGH MATCHES' + str(frame_count_all) + '.jpg'), img)
     cap.release()
+
+    if len(points) > 1:
+        _, speed_av = get_weighted_speed(frames, points, hom)
+        output = get_momentum_speeds(frames, points, hom)
+        speed_median = output[-1]
+        return speed_av, speed_median
+    else:
+        return 0, 0
 
 
 if __name__ == "__main__":
-    # res_file = open('../experiments/results_new', 'w')
-    with open(path_to_targets, 'r') as targets_file:
-        lines = targets_file.read().splitlines()
-    targets = dict((x.split(' ')[0], float(x.split(' ')[1])) for x in lines)
+    res_file = open('../video_cruise_control/second_experiment/temp/speed_file', 'w')
+    # with open(path_to_targets, 'r') as targets_file:
+    #     lines = targets_file.read().splitlines()
+    # targets = dict((x.split(' ')[0], float(x.split(' ')[1])) for x in lines)
     
     hom = Homography(np.array(pts_src_), np.array(pts_real_))
-
     plate_cascade = cv.CascadeClassifier(path_to_cascade)
     caffe.set_mode_cpu()
     net = caffe.Net(path_to_model, path_to_weights, caffe.TEST)
@@ -391,18 +406,27 @@ if __name__ == "__main__":
     # timestamps = []
     # files = os.listdir(path_to_video_and_timestamp)
     # for f in files:
-    #     if not f.endswith('_timestamps'):
+    #     if not f.endswith('_timestamps') and f.endswith('mp4'):
     #         videos.append(f)
     #         timestamps.append(f + '_timestamps')
-    # # v_t = dict(zip(videos, timestamps))
-    v_t = {'regid_1538565891498_ffv1_45':'regid_1538565891498_ffv1_45_timestamps'}
-    # v_t = {'homo_video':'video_timestamps'}
+    # v_t = dict(zip(videos, timestamps))
+    
+    # v_t = {'1.mp4':'', '3.mp4':'', '5.mp4':'', '7.mp4':'', '9.mp4':'', '11.mp4':''}
+    # v_t = {'2.mp4':'', '4.mp4':'', '6.mp4':'', '8.mp4':'', '10.mp4':'', '12.mp4':''}
+    v_t = {'8.mp4':''}
 
     for video, timestamp in v_t.items():
-        flag, plates_ever_met, plates_descriptors_all_frames = loop_video(video, timestamp, None, targets)
+        flag, plates_ever_met, plates_descriptors_all_frames = loop_video(video, None, None, None)
+        path_to_imgs = join('../video_cruise_control/second_experiment/temp', video)
+        speed_av, speed_median = visualize_reper_points(path_to_imgs, plates_ever_met, plates_descriptors_all_frames)
+        res_file.write('{} {:.1f} {:.1f}\n'.format(video, speed_av, speed_median))
+
         if not flag:
             break
 
-    visualize_reper_points(plates_ever_met, plates_descriptors_all_frames)
+    res_file.close()
 
-    # res_file.close()
+#TODO C++ implementation issues:
+# - брать середину или же дескриптор? 
+# - что если на первой (или промежуточной фотке) не нашли похожих дескрипторов
+# - may also try MSER OpenCV algorithm instead of cv.FlannBasedMatcher (dropbox uses it in text detection)

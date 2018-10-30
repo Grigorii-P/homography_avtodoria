@@ -226,5 +226,3 @@ def calc_descriptors_and_similarity():
         # plt.imshow(img3)
         # plt.title(templates[i] + '_' + templates[i+1])
         # plt.show()
-
-calc_descriptors_and_similarity()
