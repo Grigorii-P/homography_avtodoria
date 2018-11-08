@@ -9,6 +9,10 @@ from sympy.abc import x,y
 path_to_test_img = '../test.jpg'
 dst_size_height = 2000
 
+# The maximum allowed reprojection error to treat a point pair as an inlier. 
+# The parameter is only used in RANSAC-RHO-based homography estimation. 
+ransacReprojThreshold = 0.4 # 40cm
+
 
 def print_(s):
     print('-'*50)
@@ -67,23 +71,19 @@ class Homography:
         # print_(type(pts_dst[0]))
         # print_(type(pts_dst[0][0]))
 
-        # self.homs = []
-        # params = [cv2.RANSAC, cv2.RHO, cv2.LMEDS]
-        # nums = [1,2,3,4,5,6,7,8,9,10]
-        # for par in params:
-        #     for n in nums:
-        #         self.h, _ = cv2.findHomography(self.pts_src, pts_dst, par, n)
-        #         self.homs.append([self.h, par, n])
-        #TODO нужно больше одной гомографии
-        self.h, _ = cv2.findHomography(self.pts_src, pts_dst, cv2.RANSAC, 5.0)
+        self.homs = []
+        params = [cv2.RANSAC, cv2.RHO, cv2.LMEDS]
+        nums = [0.1,0.2,0.3,0.4,0.5]
+        nums = [i * 1000 for i in nums]
+        for par in params:
+            for n in nums:
+                self.h, _ = cv2.findHomography(self.pts_src, pts_dst, par, n)
+                self.homs.append([self.h, par, n])
+        # self.h, _ = cv2.findHomography(self.pts_src, pts_dst, cv2.RANSAC, 5.0)
+        # cv2.findHomogra
 
     def get_point_transform(self, src, dst):
         #TODO use perspectiveTransform() instead
-        # im_src = cv2.imread(path_to_test_img)
-        # im_out = cv2.warpPerspective(im_src, self.h, (int(self.dst_size_width), int(dst_size_height)))
-        # cv2.imwrite('test_result_8.jpg', im_out)
-        # print()
-
         # project a point from original image to the projection
         src_proj = np.dot(self.h,np.array([[src[0]],[src[1]],[1]]))
         dst_proj = np.dot(self.h,np.array([[dst[0]],[dst[1]],[1]]))

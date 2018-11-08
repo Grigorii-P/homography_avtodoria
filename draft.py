@@ -2,6 +2,7 @@ import itertools
 import json
 import os
 import pickle
+import math
 from itertools import combinations_with_replacement as cwr
 from os.path import join
 from time import time
@@ -49,6 +50,9 @@ C = [2914, 661]
 D = [3875, 1112]
 E = [3621, 2240]
 F = [480, 2632]
+K = [2404, 1294]
+L = [2877, 1657]
+M = [3440, 904]
 
 AB = 10.473
 BE = 16.88
@@ -61,44 +65,40 @@ dists = [AB, BC, CD, DE, EF, FA]
 
 hom = Homography(np.array(pts_src_), np.array(pts_real_))
 
-K = [2404, 1294]
-L = [2877, 1657]
-M = [3440, 904]
-# print(hom.get_point_transform_2(hom.h, B, D))
-
-print(cv2.)
-
 # print(hom.get_point_transform_2(hom.h, B, C))
 # print(hom.get_point_transform_2(hom.h, C, D))
 # print(hom.get_point_transform_2(hom.h, D, E))
 # print(hom.get_point_transform_2(hom.h, B, E))
 
 
-# homs = hom.homs
-# errs = []
-# for h in homs:
-#     err = 0
-#     err += AB - hom.get_point_transform_2(h[0], A, B)
-#     err += BE - hom.get_point_transform_2(h[0], B, E)
-#     err += BC - hom.get_point_transform_2(h[0], B, C)
-#     err += CD - hom.get_point_transform_2(h[0], C, D)
-#     err += DE - hom.get_point_transform_2(h[0], D, E)
-#     err += EF - hom.get_point_transform_2(h[0], E, F)
-#     err += FA - hom.get_point_transform_2(h[0], F, A)
-#     errs.append([err, h[1], h[2]])
+homs = hom.homs
+errs = []
+for h in homs:
+    err = 0
+    # err += AB - hom.get_point_transform_2(h[0], A, B)
+    # err += BE - hom.get_point_transform_2(h[0], B, E)
+    err += abs(BC - hom.get_point_transform_2(h[0], B, C))
+    err += abs(BE - hom.get_point_transform_2(h[0], B, E))
+    err += abs(CD - hom.get_point_transform_2(h[0], C, D))
+    err += abs(DE - hom.get_point_transform_2(h[0], D, E))
+    # err += EF - hom.get_point_transform_2(h[0], E, F)
+    # err += FA - hom.get_point_transform_2(h[0], F, A)
+    errs.append([err, h[1], h[2]])
     # print(AB - hom.get_point_transform_2(h, A, B))
-    # print(BC - hom.get_point_transform_2(h, B, C))
-    # print(CD - hom.get_point_transform_2(h, C, D))
-    # print(DE - hom.get_point_transform_2(h, D, E))
+    # print(BC - hom.get_point_transform_2(h[0], B, C))
+    # print(BE - hom.get_point_transform_2(h[0], B, E))
+    # print(CD - hom.get_point_transform_2(h[0], C, D))
+    # print(DE - hom.get_point_transform_2(h[0], D, E))
     # print(EF - hom.get_point_transform_2(h, E, F))
     # print(FA - hom.get_point_transform_2(h, F, A))
     # print()
-# min = 100
-# for err in errs:
-#     if err[0] < min:
-#         min = err[0]
-#         item = err
-# print('the best one is {} {} {}'.format(err[0], err[1], err[2]))
+
+min = 100
+for err in errs:
+    if err[0] < min:
+        min = err[0]
+        item = err
+print('the best one is {} {} {}'.format(item[0], item[1], item[2]))
 
 
 # im_src = cv.imread('../video_cruise_control/second_experiment/data/Image__2018-10-24__10-16-57.bmp', 0)
